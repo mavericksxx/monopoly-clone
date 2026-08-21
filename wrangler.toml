@@ -1,0 +1,21 @@
+name = "boardclone"
+main = "src/server/worker.ts"
+compatibility_date = "2026-08-21"
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[assets]
+directory = "dist/client"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+# Selective run_worker_first (array of route patterns) needs Wrangler 4; the installed
+# Wrangler is 3.114, which only accepts a boolean here. Route everything through the
+# Worker first: /api/* is handled directly, everything else falls through to
+# env.ASSETS.fetch(request) at the bottom of the fetch handler.
+run_worker_first = true

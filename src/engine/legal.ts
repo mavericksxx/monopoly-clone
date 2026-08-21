@@ -1,0 +1,58 @@
+import type { GameAction, GameMap, GameState, PlayerId } from '../shared/types';
+import { buyHotel, buyHouse, sellHotel, sellHouse } from './buildings';
+import { currentPlayer, ownableTileIndices } from './state';
+
+export function legalActions(map: GameMap, state: GameState, playerId: PlayerId): GameAction[] {
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player) return [];
+
+  if (state.phase === 'LOBBY') {
+    return state.turnOrder.length >= 2 ? [{ type: 'start_game' }] : [];
+  }
+  if (state.phase === 'GAME_OVER') return [];
+
+  const actions: GameAction[] = [];
+  const isCurrent = currentPlayer(state).id === playerId;
+
+  if (isCurrent && state.phase === 'AWAITING_ROLL') {
+    if (player.inJail) {
+      if (player.cash >= state.settings.jailFee) actions.push({ type: 'pay_jail_fee' });
+      if (player.pardonCards >= 1) actions.push({ type: 'use_pardon' });
+    }
+    actions.push({ type: 'roll' });
+  }
+
+  if (isCurrent && state.phase === 'AWAITING_BUY') {
+    actions.push({ type: 'decline_buy' });
+    const tile = map.tiles[player.tileIndex]!;
+    if ((tile.type === 'city' || tile.type === 'airport' || tile.type === 'company') && player.cash >= tile.price) {
+      actions.push({ type: 'buy' });
+    }
+  }
+
+  if (isCurrent && state.phase === 'AWAITING_END_TURN') {
+    actions.push({ type: 'end_turn' });
+  }
+
+  const canBuild = isCurrent && (state.phase === 'AWAITING_ROLL' || state.phase === 'AWAITING_END_TURN');
+  const canSellForDebt = state.phase === 'RESOLVING_DEBT' && state.debt !== null && state.debt.debtor === playerId;
+
+  if (canBuild || canSellForDebt) {
+    for (const index of ownableTileIndices(map)) {
+      const ownership = state.tiles[index]!;
+      if (ownership.owner !== playerId) continue;
+      if (canBuild) {
+        if (!buyHouse(map, state, playerId, index).error) actions.push({ type: 'buy_house', tileIndex: index });
+        if (!buyHotel(map, state, playerId, index).error) actions.push({ type: 'buy_hotel', tileIndex: index });
+      }
+      if (canBuild || canSellForDebt) {
+        if (!sellHouse(map, state, playerId, index).error) actions.push({ type: 'sell_house', tileIndex: index });
+        if (!sellHotel(map, state, playerId, index).error) actions.push({ type: 'sell_hotel', tileIndex: index });
+      }
+    }
+  }
+
+  if (!player.bankrupt) actions.push({ type: 'declare_bankruptcy' });
+
+  return actions;
+}
