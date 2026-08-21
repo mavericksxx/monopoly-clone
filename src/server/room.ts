@@ -341,6 +341,17 @@ export class Room extends DurableObject<Env> {
       return;
     }
 
+    // `createGame` only seats the players — it leaves the game in LOBBY. The engine
+    // requires a separate `start_game` reduction to randomize turn order and enter
+    // AWAITING_ROLL. Persisting the raw `createGame` result would store a room that is
+    // flagged started but whose every action is refused with "Not awaiting a roll".
+    const started = reduce(map, state, { playerId, action: { type: 'start_game' } }, () => rng.next());
+    if (started.error !== undefined) {
+      this.sendError(ws, started.error);
+      return;
+    }
+    state = started.state;
+
     this.ctx.storage.sql.exec(
       'UPDATE room SET started = 1, state = ?, rng_state = ? WHERE id = 1',
       JSON.stringify(state),
@@ -354,9 +365,23 @@ export class Room extends DurableObject<Env> {
     if (!playerId) return;
     const row = this.getRoomRow();
     if (!row) return;
+    // A reconnect closes the player's previous socket (`closeOtherSocketsFor`), and that
+    // close lands here AFTER the new socket has already been marked online. Flipping
+    // `connected` unconditionally would therefore report a live player as offline, so
+    // only go offline when this player has no other socket still open.
+    if (this.hasOtherOpenSocket(playerId, ws)) return;
     this.setPlayerConnected(playerId, false, row);
     const freshRow = this.getRoomRow()!;
     this.broadcastRoomOrState(freshRow);
+  }
+
+  private hasOtherOpenSocket(playerId: string, exclude: WebSocket): boolean {
+    for (const other of this.ctx.getWebSockets()) {
+      if (other === exclude) continue;
+      if (other.readyState !== WebSocket.OPEN) continue;
+      if (this.boundPlayerId(other) === playerId) return true;
+    }
+    return false;
   }
 
   // ── Storage helpers ──────────────────────────────────────────────────────
