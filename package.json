@@ -6,7 +6,8 @@
     "check": "tsc --noEmit",
     "test": "vitest run",
     "dev": "wrangler dev",
-    "build:client": "vite build"
+    "build:client": "vite build",
+    "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250801.0",
