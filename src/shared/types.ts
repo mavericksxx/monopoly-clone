@@ -46,7 +46,9 @@ export interface GameMap {
   startIndex: number;
   jailIndex: number;
   goToJailIndex: number;
-  /** Country groups present on this map, with their sizes. Sizes are 2, 3, 4 or 6. */
+  /** Country groups present on this map, with their sizes. Observed sizes across our
+   * four maps are 2, 3, 4, 5 and 6 — Death Valley has both 5- and 6-property groups.
+   * Never assume a size; read it from here. */
   countrySizes: Readonly<Record<string, number>>;
 }
 

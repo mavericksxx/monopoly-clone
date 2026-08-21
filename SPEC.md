@@ -55,7 +55,8 @@ the fee and moves. Rent is still collected while in jail unless `noRentInPrison`
   the group, and removed from the tile with the most.
 - Houses go 0→4, then a hotel replaces 4 houses.
 - Selling returns **half** the purchase price.
-- Group sizes are **2, 3, 4 or 6** depending on map — read `map.countrySizes`, never assume 3.
+- Group sizes are **2, 3, 4, 5 or 6** depending on map — read `map.countrySizes`, never assume 3.
+  (Verified from the data: Death Valley is four groups of 5, 6, 6, 5.)
 
 ## Rent
 

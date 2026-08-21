@@ -1,0 +1,68 @@
+/**
+ * Lucky Wheel map data, transformed from research/richup-maps-all.md's JSON block.
+ * See src/shared/types.ts for the schema this conforms to (camelCase; the source
+ * JSON uses snake_case — this file is the transform, not a copy).
+ */
+import type { Tile } from '../../shared/types';
+import { buildMap } from './build';
+
+const tiles: readonly Tile[] = [
+  { index: 0, type: 'corner', name: 'Start', subtype: 'start' },
+  { index: 1, type: 'city', name: 'Antalya', countryId: 'turkey',
+    price: 60, rents: [2, 10, 30, 90, 160, 250] as const, housePrice: 50, hotelPrice: 50 },
+  { index: 2, type: 'city', name: 'Istanbul', countryId: 'turkey',
+    price: 80, rents: [4, 20, 60, 180, 320, 450] as const, housePrice: 50, hotelPrice: 50 },
+  { index: 3, type: 'city', name: 'Brasov', countryId: 'romania',
+    price: 100, rents: [6, 30, 90, 270, 400, 550] as const, housePrice: 50, hotelPrice: 50 },
+  { index: 4, type: 'city', name: 'Bucharest', countryId: 'romania',
+    price: 120, rents: [8, 40, 100, 300, 450, 600] as const, housePrice: 50, hotelPrice: 50 },
+  { index: 5, type: 'airport', name: 'TLV Airport', price: 200, rents: [25, 50, 100, 200] as const },
+  { index: 6, type: 'city', name: 'Milan', countryId: 'italy',
+    price: 140, rents: [10, 50, 150, 450, 625, 750] as const, housePrice: 100, hotelPrice: 100 },
+  { index: 7, type: 'city', name: 'Rome', countryId: 'italy',
+    price: 160, rents: [12, 60, 180, 500, 700, 900] as const, housePrice: 100, hotelPrice: 100 },
+  { index: 8, type: 'city', name: 'Munich', countryId: 'germany',
+    price: 180, rents: [14, 70, 200, 550, 750, 950] as const, housePrice: 100, hotelPrice: 100 },
+  { index: 9, type: 'city', name: 'Berlin', countryId: 'germany',
+    price: 200, rents: [16, 80, 220, 600, 800, 1000] as const, housePrice: 100, hotelPrice: 100 },
+  { index: 10, type: 'corner', name: 'Prison', subtype: 'jail' },
+  { index: 11, type: 'bonus', name: 'Treasure', bonusType: 'treasure' },
+  { index: 12, type: 'bonus', name: 'Earnings Tax', bonusType: 'tax', taxPercentage: 10 },
+  { index: 13, type: 'bonus', name: 'Surprise', bonusType: 'surprise' },
+  { index: 14, type: 'bonus', name: 'Treasure', bonusType: 'treasure' },
+  { index: 15, type: 'airport', name: 'MUC Airport', price: 200, rents: [25, 50, 100, 200] as const },
+  { index: 16, type: 'bonus', name: 'Surprise', bonusType: 'surprise' },
+  { index: 17, type: 'bonus', name: 'Treasure', bonusType: 'treasure' },
+  { index: 18, type: 'bonus', name: 'Premium Tax', bonusType: 'premium-tax', taxAmount: 75 },
+  { index: 19, type: 'bonus', name: 'Surprise', bonusType: 'surprise' },
+  { index: 20, type: 'corner', name: 'Vacation', subtype: 'free_parking' },
+  { index: 21, type: 'city', name: 'Beijing', countryId: 'china',
+    price: 220, rents: [18, 90, 250, 700, 875, 1050] as const, housePrice: 150, hotelPrice: 150 },
+  { index: 22, type: 'city', name: 'Shanghai', countryId: 'china',
+    price: 240, rents: [20, 100, 300, 750, 925, 1100] as const, housePrice: 150, hotelPrice: 150 },
+  { index: 23, type: 'city', name: 'Belfast', countryId: 'ireland',
+    price: 260, rents: [22, 110, 330, 800, 975, 1150] as const, housePrice: 150, hotelPrice: 150 },
+  { index: 24, type: 'city', name: 'Dublin', countryId: 'ireland',
+    price: 280, rents: [24, 120, 360, 850, 1025, 1200] as const, housePrice: 150, hotelPrice: 150 },
+  { index: 25, type: 'airport', name: 'CDG Airport', price: 200, rents: [25, 50, 100, 200] as const },
+  { index: 26, type: 'city', name: 'Manchester', countryId: 'united-kingdom',
+    price: 300, rents: [26, 130, 390, 900, 1100, 1275] as const, housePrice: 200, hotelPrice: 200 },
+  { index: 27, type: 'city', name: 'London', countryId: 'united-kingdom',
+    price: 320, rents: [28, 150, 450, 1000, 1200, 1400] as const, housePrice: 200, hotelPrice: 200 },
+  { index: 28, type: 'city', name: 'San Francisco', countryId: 'united-states-of-america',
+    price: 350, rents: [35, 175, 500, 1100, 1300, 1500] as const, housePrice: 200, hotelPrice: 200 },
+  { index: 29, type: 'city', name: 'New York', countryId: 'united-states-of-america',
+    price: 400, rents: [50, 200, 600, 1400, 1700, 2000] as const, housePrice: 200, hotelPrice: 200 },
+  { index: 30, type: 'corner', name: 'Go to prison', subtype: 'go_to_jail' },
+  { index: 31, type: 'bonus', name: 'Treasure', bonusType: 'treasure' },
+  { index: 32, type: 'bonus', name: 'Surprise', bonusType: 'surprise' },
+  { index: 33, type: 'bonus', name: 'Premium Tax', bonusType: 'premium-tax', taxAmount: 75 },
+  { index: 34, type: 'bonus', name: 'Treasure', bonusType: 'treasure' },
+  { index: 35, type: 'airport', name: 'JFK Airport', price: 200, rents: [25, 50, 100, 200] as const },
+  { index: 36, type: 'bonus', name: 'Surprise', bonusType: 'surprise' },
+  { index: 37, type: 'bonus', name: 'Tax Refund', bonusType: 'tax-refund', taxAmount: 50 },
+  { index: 38, type: 'bonus', name: 'Treasure', bonusType: 'treasure' },
+  { index: 39, type: 'bonus', name: 'Surprise', bonusType: 'surprise' },
+];
+
+export const luckyWheelMap = buildMap('lucky-wheel', 'Lucky Wheel', tiles);
