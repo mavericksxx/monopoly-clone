@@ -77,3 +77,20 @@ is. Card decks are written fresh from the *effects* catalogued in `research/card
 The engine is a pure function: `reduce(map, state, playerAction, rng) → { state, events }`.
 It performs no I/O, reads no clock, and calls no global `Math.random`. All randomness arrives
 through an injected `rng: () => number`, so a game can be replayed from a seed and an action log.
+
+## Module API (pinned — lanes build against these signatures)
+
+```ts
+// src/data/maps/index.ts
+export function getMap(id: MapId): GameMap;
+export const MAPS: Record<MapId, GameMap>;
+
+// src/data/cards/index.ts
+export function getDeck(deck: DeckId): Card[];
+export function getCard(id: string): Card;
+
+// src/engine/index.ts
+export function createGame(map, players: {id,name,color}[], settings, rng): GameState;
+export function reduce(map, state, pa: PlayerAction, rng): { state: GameState; events: GameEvent[] };
+export function legalActions(map, state, playerId): GameAction[];
+```
