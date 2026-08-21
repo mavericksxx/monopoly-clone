@@ -4,13 +4,12 @@
  *   createGame(map, players, settings, rng): GameState
  *   reduce(map, state, pa, rng): { state, events }
  *
- * `src/engine/index.ts` is owned by another lane and may not exist yet. The `@ts-ignore`
- * below is load-bearing: it keeps this lane's typecheck green whether or not that module
- * exists (a normal `import` fails `tsc` with "Cannot find module" the moment the file is
- * missing, and that error surfaces here — not in the missing lane's empty directory).
- * The local `CreateGameFn`/`ReduceFn` types re-impose the pinned signatures on whatever
- * `import * as engine` resolves to, so every other file in this lane still gets full type
- * safety. Once `src/engine/index.ts` lands, nothing here needs to change.
+ * The local `CreateGameFn`/`ReduceFn` types re-impose the pinned signatures, so the rest
+ * of this lane is typed against the contract rather than against the engine's internals.
+ *
+ * `reduce` reports an illegal or out-of-turn action by RETURNING `error` — it never throws,
+ * and on error it returns the same `state` reference with no events. Callers must check
+ * `error` explicitly; a try/catch alone would silently accept every rejected action.
  */
 import type { GameEvent, GameMap, GameState, PlayerAction, RoomSettings } from '../shared/types';
 
@@ -30,9 +29,8 @@ type ReduceFn = (
   state: GameState,
   pa: PlayerAction,
   rng: Rng,
-) => { state: GameState; events: GameEvent[] };
+) => { state: GameState; events: GameEvent[]; error?: string };
 
-// @ts-ignore -- src/engine/index.ts belongs to another lane; may not exist yet.
 import * as engine from '../engine/index';
 
 export const createGame: CreateGameFn = engine.createGame;

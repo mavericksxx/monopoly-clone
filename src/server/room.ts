@@ -297,11 +297,19 @@ export class Room extends DurableObject<Env> {
     const rng = createRng(row.rng_state);
     const pa: PlayerAction = { playerId, action };
 
-    let result: { state: GameState; events: ReturnType<typeof reduce>['events'] };
+    let result: ReturnType<typeof reduce>;
     try {
       result = reduce(map, state, pa, () => rng.next());
     } catch (err) {
       this.sendError(ws, err instanceof Error ? err.message : 'illegal action');
+      return;
+    }
+
+    // The engine rejects by returning `error`, not by throwing. Without this the room
+    // would persist the unchanged state and broadcast an empty event list, leaving the
+    // sender with no feedback that their action was refused.
+    if (result.error !== undefined) {
+      this.sendError(ws, result.error);
       return;
     }
 

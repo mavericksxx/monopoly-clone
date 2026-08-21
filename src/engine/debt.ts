@@ -148,7 +148,8 @@ export function settleBankruptcy(
     next = updateBank(next, { houses: next.bank.houses + housesFreed, hotels: next.bank.hotels + hotelsFreed });
   }
 
-  const totalCash = debtor.cash + buildingCash;
+  const debtorCash = debtor.cash;
+  const totalCash = debtorCash + buildingCash;
   const newOwner: PlayerId | null = creditor;
   for (const index of ownedIndices) {
     next = updateTile(next, index, { owner: newOwner, houses: 0, hotel: false, mortgaged: false });
@@ -159,6 +160,17 @@ export function settleBankruptcy(
   }
   next = updatePlayer(next, debtorId, { cash: 0, bankrupt: true });
   next = { ...next, debt: null };
+  // Two separate paid events, not one lumped sum: debtorCash is a real balance the debtor actually
+  // held (from: debtorId); buildingCash never touched the debtor's balance — it's the bank's payout
+  // for the liquidated buildings, sourced from the bank (from: null). Bundling them as one
+  // from:debtorId event would overstate the debtor's real cash outflow. To the Bank (creditor null)
+  // the buildingCash leg is the bank paying itself, so it emits nothing.
+  if (debtorCash > 0) {
+    out.push({ type: 'paid', from: debtorId, to: creditor, amount: debtorCash, reason: 'bankruptcy_settlement' });
+  }
+  if (buildingCash > 0 && creditor) {
+    out.push({ type: 'paid', from: null, to: creditor, amount: buildingCash, reason: 'bankruptcy_settlement' });
+  }
   out.push({ type: 'bankrupt', playerId: debtorId, creditor });
 
   const remaining = activePlayers(next);

@@ -134,7 +134,10 @@ function handleBuy(map: GameMap, state: GameState, playerId: PlayerId): ActionRe
   let next = updatePlayer(state, playerId, { cash: player.cash - tile.price });
   next = updateTile(next, player.tileIndex, { owner: playerId });
   next = { ...next, phase: phaseAfterLanding(next) };
-  return ok(next, [{ type: 'bought', playerId, tileIndex: player.tileIndex, price: tile.price }]);
+  return ok(next, [
+    { type: 'paid', from: playerId, to: null, amount: tile.price, reason: 'bought_property' },
+    { type: 'bought', playerId, tileIndex: player.tileIndex, price: tile.price },
+  ]);
 }
 
 function handleDeclineBuy(state: GameState, playerId: PlayerId): ActionResult {

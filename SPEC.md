@@ -92,6 +92,9 @@ export function getCard(id: string): Card;
 
 // src/engine/index.ts
 export function createGame(map, players: {id,name,color}[], settings, rng): GameState;
-export function reduce(map, state, pa: PlayerAction, rng): { state: GameState; events: GameEvent[] };
+export function reduce(map, state, pa: PlayerAction, rng): { state: GameState; events: GameEvent[]; error?: string };
+// reduce REJECTS BY RETURNING `error`, never by throwing. On rejection it returns the
+// same `state` reference, no events, and does not bump `version`. Callers must check
+// `error`; a try/catch alone silently accepts every refused action.
 export function legalActions(map, state, playerId): GameAction[];
 ```
