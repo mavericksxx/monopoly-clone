@@ -39,7 +39,7 @@ function DevPreview({ mode, mapId }: { mode: string; mapId: MapId }) {
   if (mode === 'game') {
     const map = getMap(mapId);
     const state = fixtureGameState(mapId);
-    return <Game map={map} state={state} myPlayerId="p1" events={[]} onAction={() => {}} />;
+    return <Game map={map} state={state} myPlayerId="p1" events={[]} onAction={() => {}} code="DEMO" />;
   }
   return null;
 }

@@ -8,9 +8,15 @@
  * a tile count or a fixed coordinate.
  */
 
+/** Which run of the ring a tile sits on. Corners belong to the run they start. */
+export type Edge = 'bottom' | 'left' | 'top' | 'right';
+
 export interface GridPos {
   row: number;
   col: number;
+  edge: Edge;
+  /** True for the four corner tiles, which get a square cell and upright text. */
+  isCorner: boolean;
 }
 
 export interface RingLayout {
@@ -21,6 +27,8 @@ export interface RingLayout {
   /** positions[i] is tile i's 1-indexed CSS Grid row/column. */
   positions: readonly GridPos[];
 }
+
+const EDGES: readonly Edge[] = ['bottom', 'left', 'top', 'right'];
 
 export function ringLayout(tileCount: number): RingLayout {
   if (!Number.isInteger(tileCount) || tileCount < 4 || (tileCount - 4) % 4 !== 0) {
@@ -38,6 +46,7 @@ export function ringLayout(tileCount: number): RingLayout {
     const posInSegment = i % segmentLength;
     let row: number;
     let col: number;
+    const edge: Edge = EDGES[segment] ?? 'right';
     switch (segment) {
       case 0: // bottom row, right corner -> left corner
         row = side;
@@ -56,7 +65,7 @@ export function ringLayout(tileCount: number): RingLayout {
         col = side;
         break;
     }
-    positions.push({ row, col });
+    positions.push({ row, col, edge, isCorner: posInSegment === 0 });
   }
 
   return { side, perSide, positions };

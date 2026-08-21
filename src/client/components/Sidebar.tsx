@@ -1,21 +1,19 @@
-import type { GameAction, GameEvent, GameMap, GameState, PlayerId } from '../../shared/types';
+import type { GameAction, GameMap, GameState, PlayerId } from '../../shared/types';
 import { PlayerCard } from './PlayerCard';
-import { EventLog } from './EventLog';
 import { ActionBar } from './ActionBar';
 
 export function Sidebar({
-  map, state, myPlayerId, events, onAction,
+  map, state, myPlayerId, onAction,
 }: {
   map: GameMap;
   state: GameState;
   myPlayerId: PlayerId;
-  events: readonly GameEvent[];
   onAction: (action: GameAction) => void;
 }) {
   const currentPlayerId = state.turnOrder[state.currentPlayerIndex];
 
   return (
-    <div className="sidebar">
+    <div className="rail rail--right">
       <div className="sidebar__players">
         {state.players.map(player => (
           <PlayerCard
@@ -29,7 +27,6 @@ export function Sidebar({
         ))}
       </div>
       <ActionBar map={map} state={state} myPlayerId={myPlayerId} onAction={onAction} />
-      <EventLog events={events} players={state.players} />
     </div>
   );
 }

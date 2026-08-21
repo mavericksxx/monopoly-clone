@@ -16,6 +16,7 @@ export function RoomContainer({ code }: { code: string }) {
           myPlayerId={conn.playerId}
           events={conn.events}
           onAction={conn.sendAction}
+          code={code}
         />
       );
     }
