@@ -1,4 +1,5 @@
-import type { MapId } from '../shared/types';
+import { useEffect, useState } from 'react';
+import type { GameEvent, GameState, MapId } from '../shared/types';
 import { useLocation } from './router';
 import { Home } from './pages/Home';
 import { RoomContainer } from './pages/RoomContainer';
@@ -6,9 +7,36 @@ import { Board } from './components/Board';
 import { Lobby } from './pages/Lobby';
 import { Game } from './pages/Game';
 import { getMap } from './mapSource';
-import { fixtureGameState, fixtureRoomMeta, fixturePlayers } from './fixtures';
+import { fixtureEvents, fixtureGameState, fixtureRoomMeta, fixturePlayers } from './fixtures';
 
 const MAP_IDS: readonly MapId[] = ['classic', 'mr-worldwide', 'death-valley', 'lucky-wheel'];
+
+/**
+ * Drip-feeds the fixture event log in after mount, then a second roll, instead
+ * of rendering them from the first frame — the card popup and dice tumble
+ * both key off a `card_drawn`/`rolled` event actually arriving in `events`
+ * (see `useBoardEventEffects` in Board.tsx), so a static fixture wouldn't
+ * exercise either. The second roll pairs a `state.lastRoll` update with a
+ * `rolled` event, same as the real server does for one action. Dev-only; no
+ * server involved.
+ */
+function useAnimatedFixture(mapId: MapId): { state: GameState; events: readonly GameEvent[] } {
+  const [state, setState] = useState(() => fixtureGameState(mapId));
+  const [events, setEvents] = useState<readonly GameEvent[]>([]);
+
+  useEffect(() => {
+    setState(fixtureGameState(mapId));
+    setEvents([]);
+    const t1 = setTimeout(() => setEvents(fixtureEvents()), 700);
+    const t2 = setTimeout(() => {
+      setState(s => ({ ...s, lastRoll: [6, 2] }));
+      setEvents(es => [...es, { type: 'rolled', playerId: 'p2', dice: [6, 2], isDouble: false }]);
+    }, 1800);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [mapId]);
+
+  return { state, events };
+}
 
 /**
  * Renders a fixture instead of connecting to a room, so the board and
@@ -18,13 +46,14 @@ const MAP_IDS: readonly MapId[] = ['classic', 'mr-worldwide', 'death-valley', 'l
  *   /?dev=game
  */
 function DevPreview({ mode, mapId }: { mode: string; mapId: MapId }) {
+  const { state, events } = useAnimatedFixture(mapId);
+
   if (mode === 'board') {
     const map = getMap(mapId);
-    const state = fixtureGameState(mapId);
     return (
       <div className="dev-preview">
         <p className="dev-preview__label">{map.name} — {map.tiles.length} tiles</p>
-        <Board map={map} state={state} />
+        <Board map={map} state={state} events={events} />
       </div>
     );
   }
@@ -38,8 +67,7 @@ function DevPreview({ mode, mapId }: { mode: string; mapId: MapId }) {
   }
   if (mode === 'game') {
     const map = getMap(mapId);
-    const state = fixtureGameState(mapId);
-    return <Game map={map} state={state} myPlayerId="p1" events={[]} onAction={() => {}} code="DEMO" />;
+    return <Game map={map} state={state} myPlayerId="p1" events={events} onAction={() => {}} code="DEMO" />;
   }
   return null;
 }

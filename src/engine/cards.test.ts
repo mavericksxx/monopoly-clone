@@ -92,10 +92,12 @@ describe('applyCardEffect', () => {
     expect(p1.tileIndex).toBe(7);
     expect(p1.cash).toBe(before);
 
+    // Landing exactly on tile 0 also pays landOnStartBonus, on top of collectStart's salary
+    // (issue 5: resting on START pays more than passing over it).
     const r2 = applyCardEffect(SMALL_MAP, state, 'p1', { kind: 'move_to', tileIndex: 0, collectStart: true }, []);
     const p1b = r2.state.players.find((p) => p.id === 'p1')!;
     expect(p1b.tileIndex).toBe(0);
-    expect(p1b.cash).toBe(before + state.settings.startSalary);
+    expect(p1b.cash).toBe(before + state.settings.startSalary + state.settings.landOnStartBonus);
   });
 
   it('move_relative: forward pays salary if it passes START; backward never does', () => {

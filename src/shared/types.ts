@@ -91,6 +91,13 @@ export interface RoomSettings {
   vacationCash: boolean;
   noRentInPrison: boolean;
   startSalary: number;
+  /**
+   * Extra cash paid on top of `startSalary` when a token comes to rest exactly on
+   * START (passing over it pays `startSalary` alone). Flat, not scaled: richup's
+   * bundle carries no start-bonus identifier (research/README.md:152), so the
+   * relationship to `startSalary` is unknown and 100 is a literal, not a ratio.
+   */
+  landOnStartBonus: number;
   jailFee: number;
   /** Dice multiplier by number of companies owned, index = count - 1. */
   companyRentMultipliers: readonly number[];
@@ -109,6 +116,7 @@ export const DEFAULT_SETTINGS: RoomSettings = {
   vacationCash: false,
   noRentInPrison: false,
   startSalary: 200,
+  landOnStartBonus: 100,
   jailFee: 50,
   companyRentMultipliers: [4, 10, 20],
   unlimitedBuildings: false,
@@ -128,6 +136,8 @@ export interface Player {
   /** Turns spent in jail this stint, 0–3. */
   jailTurns: number;
   pardonCards: number;
+  /** Turns this player must sit out before rolling again (set by landing on Vacation). */
+  skipTurns: number;
   bankrupt: boolean;
   connected: boolean;
 }
@@ -214,6 +224,7 @@ export type GameEvent =
   | { type: 'debt_opened'; debt: Debt }
   | { type: 'debt_cleared'; playerId: PlayerId }
   | { type: 'bankrupt'; playerId: PlayerId; creditor: PlayerId | null }
+  | { type: 'turn_skipped'; playerId: PlayerId }
   | { type: 'turn_ended'; nextPlayerId: PlayerId }
   | { type: 'game_over'; winner: PlayerId };
 

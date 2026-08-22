@@ -69,6 +69,7 @@ const SETTINGS_VALIDATORS: { [K in keyof RoomSettings]: (v: unknown) => boolean 
   vacationCash: (v) => typeof v === 'boolean',
   noRentInPrison: (v) => typeof v === 'boolean',
   startSalary: (v) => typeof v === 'number' && Number.isFinite(v),
+  landOnStartBonus: (v) => typeof v === 'number' && Number.isFinite(v),
   jailFee: (v) => typeof v === 'number' && Number.isFinite(v),
   companyRentMultipliers: (v) => Array.isArray(v) && v.every((n) => typeof n === 'number'),
   unlimitedBuildings: (v) => typeof v === 'boolean',

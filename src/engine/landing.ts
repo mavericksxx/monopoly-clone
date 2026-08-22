@@ -12,6 +12,7 @@
 import type { Card, CardEffect, DeckId, GameEvent, GameMap, GameState, PlayerId, Tile } from '../shared/types';
 import { getCard, getDeck } from '../data/cards';
 import {
+  addToVacationPot,
   countAirports,
   countCompanies,
   getPlayer,
@@ -43,6 +44,8 @@ function chargeOrDebt(map: GameMap, state: GameState, playerId: PlayerId, amount
     if (creditor) {
       const c = getPlayer(next, creditor);
       next = updatePlayer(next, creditor, { cash: c.cash + amount });
+    } else {
+      next = addToVacationPot(next, amount);
     }
     return finish(next, [...events, { type: 'paid', from: playerId, to: creditor, amount, reason }]);
   }
@@ -281,6 +284,20 @@ export function resolveLanding(map: GameMap, state: GameState, playerId: PlayerI
 
   if (tile.type === 'corner') {
     if (tile.subtype === 'go_to_jail') return sendToJail(map, state, playerId, 'tile', events);
+    if (tile.subtype === 'start') {
+      const next = updatePlayer(state, playerId, { cash: player.cash + state.settings.landOnStartBonus });
+      return finish(next, [...events, { type: 'paid', from: null, to: playerId, amount: state.settings.landOnStartBonus, reason: 'start_bonus' }]);
+    }
+    if (tile.subtype === 'free_parking') {
+      let next = updatePlayer(state, playerId, { skipTurns: 1 });
+      const evs = events.slice();
+      if (state.vacationPot > 0) {
+        const p = getPlayer(next, playerId);
+        next = { ...updatePlayer(next, playerId, { cash: p.cash + state.vacationPot }), vacationPot: 0 };
+        evs.push({ type: 'paid', from: null, to: playerId, amount: state.vacationPot, reason: 'vacation_pot' });
+      }
+      return finish(next, evs);
+    }
     return finish(state, events);
   }
   if (tile.type === 'bonus') return resolveBonus(map, state, playerId, tile, events);

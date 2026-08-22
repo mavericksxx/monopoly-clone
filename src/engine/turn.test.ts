@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createGame, reduce } from './index';
 import { SMALL_MAP } from './fixtures';
 import { dieVal, identityRng, queueRng, settingsFor } from './fixtures';
-import { walkForward } from './state';
+import { updatePlayer, walkForward } from './state';
 
 const P1 = { id: 'p1', name: 'Ann', color: 'red' };
 const P2 = { id: 'p2', name: 'Bo', color: 'blue' };
@@ -90,17 +90,20 @@ describe('roll / move / buy / decline', () => {
     expect(neither).toEqual({ to: 3, passedStart: false });
   });
 
-  it('landing exactly on START via a card pays the flat salary once (no bonus for exactness)', () => {
+  it('landing exactly on START via a card pays the salary plus the landOnStartBonus, as two separate paid events', () => {
     const started = startedGame();
     const currentId = started.turnOrder[started.currentPlayerIndex]!;
     const cashBefore = started.players.find((p) => p.id === currentId)!.cash;
     // (1,1): tile0 -> tile2 (treasure). With the deck unshuffled (identityRng), the first card is
-    // treasure-01: move_to(0, collectStart:true) — teleports back to START and pays salary once.
+    // treasure-01: move_to(0, collectStart:true) — teleports back to START, paying the salary leg
+    // via collectStart and the landOnStartBonus leg via resolveLanding's corner branch (issue 5).
     const r = reduce(SMALL_MAP, started, { playerId: currentId, action: { type: 'roll' } }, queueRng([dieVal(1), dieVal(1)]));
     const player = r.state.players.find((p) => p.id === currentId)!;
     expect(player.tileIndex).toBe(0);
-    expect(player.cash).toBe(cashBefore + r.state.settings.startSalary);
+    expect(player.cash).toBe(cashBefore + r.state.settings.startSalary + r.state.settings.landOnStartBonus);
     expect(r.events.some((e) => e.type === 'card_drawn')).toBe(true);
+    expect(r.events.some((e) => e.type === 'paid' && e.reason === 'start_salary' && e.amount === r.state.settings.startSalary)).toBe(true);
+    expect(r.events.some((e) => e.type === 'paid' && e.reason === 'start_bonus' && e.amount === r.state.settings.landOnStartBonus)).toBe(true);
   });
 });
 
@@ -149,7 +152,7 @@ describe('jail', () => {
     return { state, jailedId: currentId };
   }
 
-  it('pay_jail_fee releases immediately and the next roll moves normally', () => {
+  it('pay_jail_fee releases the player and ends their turn immediately, with no roll of their own', () => {
     let { state, jailedId } = jailedState();
     // advance turns back around to the jailed player
     while (state.turnOrder[state.currentPlayerIndex] !== jailedId) {
@@ -165,6 +168,10 @@ describe('jail', () => {
     expect(after.inJail).toBe(false);
     expect(after.cash).toBe(before.cash - state.settings.jailFee);
     expect(r.state.phase).toBe('AWAITING_ROLL');
+    // The turn moved on to someone else — the payer does not get to roll on the same turn
+    // they paid their way out (issue 1).
+    expect(r.state.turnOrder[r.state.currentPlayerIndex]).not.toBe(jailedId);
+    expect(r.events.some((e) => e.type === 'turn_ended')).toBe(true);
   });
 
   it('rolling doubles in jail escapes but never grants a bonus reroll', () => {
@@ -221,6 +228,92 @@ describe('jail', () => {
     expect(player.tileIndex).toBe((SMALL_MAP.jailIndex + 3) % SMALL_MAP.tiles.length);
     expect(third.events.some((e) => e.type === 'left_jail' && e.how === 'served')).toBe(true);
     expect(player.cash).toBe(cashBefore - state.settings.jailFee);
+  });
+});
+
+describe('vacation corner', () => {
+  it('pools bank-bound payments and pays out the whole pot when vacationCash is on', () => {
+    const started = startedGame({ vacationCash: true });
+    const currentId = started.turnOrder[started.currentPlayerIndex]!;
+    const atTax = updatePlayer(started, currentId, { tileIndex: 12 });
+    // (1,1): tile12 -> tile14, premium-tax (flat 75) — feeds the pot.
+    const taxed = reduce(SMALL_MAP, atTax, { playerId: currentId, action: { type: 'roll' } }, queueRng([dieVal(1), dieVal(1)]));
+    expect(taxed.state.vacationPot).toBe(75);
+    expect(taxed.events.some((e) => e.type === 'paid' && e.reason === 'premium_tax' && e.amount === 75)).toBe(true);
+
+    const atVacation = updatePlayer(taxed.state, currentId, { tileIndex: 19 });
+    // (1,1) again: tile19 -> tile21, Vacation — collects the whole pot and resets it.
+    const arrived = reduce(SMALL_MAP, atVacation, { playerId: currentId, action: { type: 'roll' } }, queueRng([dieVal(1), dieVal(1)]));
+    expect(arrived.state.vacationPot).toBe(0);
+    expect(arrived.events.some((e) => e.type === 'paid' && e.reason === 'vacation_pot' && e.amount === 75)).toBe(true);
+    const player = arrived.state.players.find((p) => p.id === currentId)!;
+    expect(player.cash).toBe(started.settings.startingCash); // taxed 75, then the pot refunds exactly 75
+  });
+
+  it('never accumulates and never pays out when vacationCash is off', () => {
+    const started = startedGame({ vacationCash: false });
+    const currentId = started.turnOrder[started.currentPlayerIndex]!;
+    const atTax = updatePlayer(started, currentId, { tileIndex: 12 });
+    const taxed = reduce(SMALL_MAP, atTax, { playerId: currentId, action: { type: 'roll' } }, queueRng([dieVal(1), dieVal(1)]));
+    expect(taxed.state.vacationPot).toBe(0);
+
+    const atVacation = updatePlayer(taxed.state, currentId, { tileIndex: 19 });
+    const arrived = reduce(SMALL_MAP, atVacation, { playerId: currentId, action: { type: 'roll' } }, queueRng([dieVal(1), dieVal(1)]));
+    expect(arrived.state.vacationPot).toBe(0);
+    expect(arrived.events.some((e) => e.type === 'paid' && e.reason === 'vacation_pot')).toBe(false);
+  });
+
+  it('sets skipTurns on landing, and the engine skips that player exactly once when their turn comes round', () => {
+    const started = startedGame();
+    const p1 = started.turnOrder[0]!;
+    const p2 = started.turnOrder[1]!;
+
+    const atTile14 = updatePlayer(started, p1, { tileIndex: 14 });
+    // (3,4): tile14 -> tile21, Vacation — not a double, so this ends the turn normally.
+    const landed = reduce(SMALL_MAP, atTile14, { playerId: p1, action: { type: 'roll' } }, queueRng([dieVal(3), dieVal(4)]));
+    expect(landed.state.phase).toBe('AWAITING_END_TURN');
+    expect(landed.state.players.find((p) => p.id === p1)!.skipTurns).toBe(1);
+
+    const toP2 = reduce(SMALL_MAP, landed.state, { playerId: p1, action: { type: 'end_turn' } }, identityRng);
+    expect(toP2.state.turnOrder[toP2.state.currentPlayerIndex]).toBe(p2);
+    expect(toP2.events.some((e) => e.type === 'turn_skipped')).toBe(false);
+
+    // p2's turn ends next, which would normally hand back to p1 — but p1 is still sitting
+    // out, so with only two players the table skips straight back to p2 instead of stalling.
+    let s = reduce(SMALL_MAP, toP2.state, { playerId: p2, action: { type: 'roll' } }, queueRng([dieVal(1), dieVal(2)]));
+    if (s.state.phase === 'AWAITING_BUY') s = reduce(SMALL_MAP, s.state, { playerId: p2, action: { type: 'decline_buy' } }, identityRng);
+    const backToP2 = reduce(SMALL_MAP, s.state, { playerId: p2, action: { type: 'end_turn' } }, identityRng);
+    expect(backToP2.events.some((e) => e.type === 'turn_skipped' && e.playerId === p1)).toBe(true);
+    expect(backToP2.state.turnOrder[backToP2.state.currentPlayerIndex]).toBe(p2);
+    expect(backToP2.state.players.find((p) => p.id === p1)!.skipTurns).toBe(0);
+  });
+
+  it('degenerate case: two players both sitting out at once resolves in one pass, logging only the one truly passed over', () => {
+    const started = startedGame();
+    const p1 = started.turnOrder[0]!;
+    const p2 = started.turnOrder[1]!;
+
+    // p2 goes first this time: force it to be p2's turn, and land them on Vacation.
+    const p2Turn = { ...started, currentPlayerIndex: 1 };
+    const p2AtTile14 = updatePlayer(p2Turn, p2, { tileIndex: 14 });
+    const p2Landed = reduce(SMALL_MAP, p2AtTile14, { playerId: p2, action: { type: 'roll' } }, queueRng([dieVal(3), dieVal(4)]));
+    expect(p2Landed.state.players.find((p) => p.id === p2)!.skipTurns).toBe(1);
+    const toP1 = reduce(SMALL_MAP, p2Landed.state, { playerId: p2, action: { type: 'end_turn' } }, identityRng);
+    expect(toP1.state.turnOrder[toP1.state.currentPlayerIndex]).toBe(p1); // p2's pending skip isn't due yet
+
+    // Now p1 also lands on Vacation, with p2's skip still outstanding from before.
+    const p1AtTile14 = updatePlayer(toP1.state, p1, { tileIndex: 14 });
+    const p1Landed = reduce(SMALL_MAP, p1AtTile14, { playerId: p1, action: { type: 'roll' } }, queueRng([dieVal(3), dieVal(4)]));
+    expect(p1Landed.state.players.find((p) => p.id === p1)!.skipTurns).toBe(1);
+
+    // Both players are now skipping. With only two players this collapses into one
+    // resolution: p2's skip and p1's skip are both consumed, but p2 — who ends up with
+    // the turn — isn't the one logged as skipped; p1 is.
+    const result = reduce(SMALL_MAP, p1Landed.state, { playerId: p1, action: { type: 'end_turn' } }, identityRng);
+    expect(result.state.turnOrder[result.state.currentPlayerIndex]).toBe(p2);
+    expect(result.events.filter((e) => e.type === 'turn_skipped')).toEqual([{ type: 'turn_skipped', playerId: p1 }]);
+    expect(result.state.players.find((p) => p.id === p1)!.skipTurns).toBe(0);
+    expect(result.state.players.find((p) => p.id === p2)!.skipTurns).toBe(0);
   });
 });
 

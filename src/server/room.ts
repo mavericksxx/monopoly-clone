@@ -205,7 +205,7 @@ export class Room extends DurableObject<Env> {
       this.sendError(ws, 'room already started');
       return;
     }
-    const settings: RoomSettings = JSON.parse(row.settings);
+    const settings = this.settingsOf(row);
     const players = this.getPlayers();
     if (players.length >= settings.maxPlayers) {
       this.sendError(ws, 'room is full');
@@ -256,7 +256,7 @@ export class Room extends DurableObject<Env> {
       return;
     }
 
-    const settings: RoomSettings = { ...JSON.parse(row.settings), ...patch };
+    const settings: RoomSettings = { ...this.settingsOf(row), ...patch };
     this.ctx.storage.sql.exec('UPDATE room SET settings = ? WHERE id = 1', JSON.stringify(settings));
     const freshRow = this.getRoomRow()!;
     this.broadcast({
@@ -328,7 +328,7 @@ export class Room extends DurableObject<Env> {
       return;
     }
 
-    const settings: RoomSettings = JSON.parse(row.settings);
+    const settings = this.settingsOf(row);
     const map = getMap(settings.mapId);
     const players = this.getPlayers().map((p) => ({ id: p.id, name: p.name, color: p.color }));
     const rng = createRng(row.rng_state);
@@ -405,7 +405,12 @@ export class Room extends DurableObject<Env> {
   }
 
   private getState(row: RoomRow): GameState | null {
-    return row.state ? (JSON.parse(row.state) as GameState) : null;
+    if (!row.state) return null;
+    const state = JSON.parse(row.state) as GameState;
+    // `createGame` snapshots the settings into the state, so a game already in flight
+    // when a new setting shipped carries the same missing-key hazard as the room row
+    // (see `settingsOf`) — and here it would corrupt a live game, not a fresh one.
+    return { ...state, settings: { ...DEFAULT_SETTINGS, ...state.settings } };
   }
 
   /** Persists a new state without touching `rng_state` — use for connection-flag writes. */
@@ -438,18 +443,29 @@ export class Room extends DurableObject<Env> {
     }
   }
 
+  /**
+   * Settings persist as one whole JSON blob, so a room row written before a setting
+   * existed comes back missing that key. Reading it raw would hand the engine an
+   * `undefined` number, and the first `cash + undefined` turns that player's balance
+   * into NaN for the rest of the game. Defaults fill the gaps on every read; the blob
+   * is only rewritten when the host actually edits settings.
+   */
+  private settingsOf(row: RoomRow): RoomSettings {
+    return { ...DEFAULT_SETTINGS, ...(JSON.parse(row.settings) as Partial<RoomSettings>) };
+  }
+
   private roomMetaFromRow(row: RoomRow): RoomMeta {
     return {
       code: row.code,
       hostId: row.host_id ?? '',
-      settings: JSON.parse(row.settings),
+      settings: this.settingsOf(row),
       started: !!row.started,
     };
   }
 
   /** Placeholder `Player` records for the pre-game lobby roster (no `GameState` exists yet). */
   private lobbyPlayerList(row: RoomRow): Player[] {
-    const settings: RoomSettings = JSON.parse(row.settings);
+    const settings = this.settingsOf(row);
     const startIndex = getMap(settings.mapId).startIndex;
     return this.getPlayers().map((p) => ({
       id: p.id,
@@ -460,6 +476,7 @@ export class Room extends DurableObject<Env> {
       inJail: false,
       jailTurns: 0,
       pardonCards: 0,
+      skipTurns: 0,
       bankrupt: false,
       connected: !!p.connected,
     }));

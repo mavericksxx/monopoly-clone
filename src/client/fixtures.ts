@@ -1,5 +1,5 @@
 import type {
-  CountryId, GameMap, GameState, MapId, Ownership, Player, RoomMeta, Tile,
+  CountryId, GameEvent, GameMap, GameState, MapId, Ownership, Player, RoomMeta, Tile,
 } from '../shared/types';
 import { DEFAULT_SETTINGS } from '../shared/types';
 import { displayName } from './colors';
@@ -155,10 +155,10 @@ export function getMap(id: MapId): GameMap {
 
 export function fixturePlayers(): Player[] {
   return [
-    { id: 'p1', name: 'Ama', color: '#e74c3c', cash: 1500, tileIndex: 0, inJail: false, jailTurns: 0, pardonCards: 0, bankrupt: false, connected: true },
-    { id: 'p2', name: 'Noah', color: '#3498db', cash: 1240, tileIndex: 7, inJail: false, jailTurns: 0, pardonCards: 1, bankrupt: false, connected: true },
-    { id: 'p3', name: 'Priya', color: '#2ecc71', cash: 860, tileIndex: 22, inJail: true, jailTurns: 1, pardonCards: 0, bankrupt: false, connected: false },
-    { id: 'p4', name: 'Yusuf', color: '#f1c40f', cash: 300, tileIndex: 34, inJail: false, jailTurns: 0, pardonCards: 0, bankrupt: false, connected: true },
+    { id: 'p1', name: 'Ama', color: '#e74c3c', cash: 1500, tileIndex: 0, inJail: false, jailTurns: 0, pardonCards: 0, skipTurns: 0, bankrupt: false, connected: true },
+    { id: 'p2', name: 'Noah', color: '#3498db', cash: 1240, tileIndex: 7, inJail: false, jailTurns: 0, pardonCards: 1, skipTurns: 0, bankrupt: false, connected: true },
+    { id: 'p3', name: 'Priya', color: '#2ecc71', cash: 860, tileIndex: 22, inJail: true, jailTurns: 1, pardonCards: 0, skipTurns: 0, bankrupt: false, connected: false },
+    { id: 'p4', name: 'Yusuf', color: '#f1c40f', cash: 300, tileIndex: 34, inJail: false, jailTurns: 0, pardonCards: 0, skipTurns: 0, bankrupt: false, connected: true },
   ];
 }
 
@@ -196,11 +196,28 @@ export function fixtureGameState(mapId: MapId = 'classic'): GameState {
     debt: null,
     doublesCount: 0,
     lastRoll: [4, 3],
-    vacationPot: 0,
+    vacationPot: 340,
     winner: null,
   };
 }
 
 export function fixtureRoomMeta(code = 'DEMO'): RoomMeta {
   return { code, hostId: 'p1', settings: DEFAULT_SETTINGS, started: false };
+}
+
+/** Sample event stream for the dev-preview routes — exercises the log's
+ * formatting (including a card-drawn line and an id-less fixture card, to
+ * prove the lookup guard) without needing a running server. */
+export function fixtureEvents(): GameEvent[] {
+  return [
+    { type: 'game_started', turnOrder: ['p1', 'p2', 'p3', 'p4'] },
+    { type: 'rolled', playerId: 'p1', dice: [4, 3], isDouble: false },
+    { type: 'moved', playerId: 'p1', from: 0, to: 7, passedStart: false },
+    { type: 'bought', playerId: 'p1', tileIndex: 7, price: 180 },
+    { type: 'paid', from: null, to: 'p1', amount: 100, reason: 'start_bonus' },
+    { type: 'card_drawn', playerId: 'p3', deck: 'treasure', cardId: 'treasure-01' },
+    { type: 'card_drawn', playerId: 'p4', deck: 'surprise', cardId: 'fixture-unknown-card' },
+    { type: 'turn_skipped', playerId: 'p3' },
+    { type: 'turn_ended', nextPlayerId: 'p2' },
+  ];
 }

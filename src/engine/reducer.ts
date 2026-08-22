@@ -4,7 +4,7 @@ import { advanceTurn, openDebt, phaseAfterLanding, settleBankruptcy, trySettleOr
 import { moveForwardAndResolve, sendToJail, freshDeckOrder } from './landing';
 import { rollDice, shuffle } from './rng';
 import { ok, reject, type ActionResult } from './result';
-import { currentPlayer, getPlayer, updatePlayer, updateTile } from './state';
+import { addToVacationPot, currentPlayer, getPlayer, updatePlayer, updateTile } from './state';
 
 export function createGame(
   map: GameMap,
@@ -24,6 +24,7 @@ export function createGame(
     inJail: false,
     jailTurns: 0,
     pardonCards: 0,
+    skipTurns: 0,
     bankrupt: false,
     connected: true,
   }));
@@ -103,6 +104,7 @@ function handleRoll(map: GameMap, state: GameState, playerId: PlayerId, rng: () 
     const fee = state.settings.jailFee;
     if (player.cash >= fee) {
       next = updatePlayer(next, playerId, { cash: player.cash - fee });
+      next = addToVacationPot(next, fee);
       events.push({ type: 'paid', from: playerId, to: null, amount: fee, reason: 'jail_fee' });
       return moveForwardAndResolve(map, next, playerId, dice[0] + dice[1], events);
     }
@@ -152,10 +154,16 @@ function handlePayJailFee(state: GameState, playerId: PlayerId): ActionResult {
   const player = getPlayer(state, playerId);
   if (!player.inJail) return reject(state, 'Not in jail');
   if (player.cash < state.settings.jailFee) return reject(state, 'Not enough cash');
-  const next = updatePlayer(state, playerId, { cash: player.cash - state.settings.jailFee, inJail: false, jailTurns: 0 });
+  let next = updatePlayer(state, playerId, { cash: player.cash - state.settings.jailFee, inJail: false, jailTurns: 0 });
+  next = addToVacationPot(next, state.settings.jailFee);
+  // Paying your way out ends the turn on the spot — no roll, no build window this turn.
+  const advanced = advanceTurn(next);
+  next = { ...advanced.state, phase: 'AWAITING_ROLL' };
   return ok(next, [
     { type: 'paid', from: playerId, to: null, amount: state.settings.jailFee, reason: 'jail_fee' },
     { type: 'left_jail', playerId, how: 'fee' },
+    ...advanced.events,
+    { type: 'turn_ended', nextPlayerId: currentPlayer(next).id },
   ]);
 }
 
@@ -172,8 +180,9 @@ function handleUsePardon(state: GameState, playerId: PlayerId): ActionResult {
 function handleEndTurn(state: GameState, playerId: PlayerId): ActionResult {
   if (state.phase !== 'AWAITING_END_TURN') return reject(state, 'Not awaiting end of turn');
   if (currentPlayer(state).id !== playerId) return reject(state, 'Not your turn');
-  const next: GameState = { ...advanceTurn(state), phase: 'AWAITING_ROLL' };
-  return ok(next, [{ type: 'turn_ended', nextPlayerId: currentPlayer(next).id }]);
+  const advanced = advanceTurn(state);
+  const next: GameState = { ...advanced.state, phase: 'AWAITING_ROLL' };
+  return ok(next, [...advanced.events, { type: 'turn_ended', nextPlayerId: currentPlayer(next).id }]);
 }
 
 function handleDeclareBankruptcy(map: GameMap, state: GameState, playerId: PlayerId): ActionResult {

@@ -1,8 +1,20 @@
-import type { GameEvent, Player, PlayerId } from '../../shared/types';
+import type { Card, GameEvent, Player, PlayerId } from '../../shared/types';
+import { getCard } from '../../data/cards';
 
 function nameOf(players: readonly Player[], id: PlayerId | null): string {
   if (!id) return 'the bank';
   return players.find(p => p.id === id)?.name ?? 'a player';
+}
+
+/** `getCard` throws on an id it doesn't recognise — some fixture decks carry
+ * placeholder ids, so both the log and the board-centre popup go through
+ * this instead of calling it directly. */
+export function getCardSafe(cardId: string): Card | null {
+  try {
+    return getCard(cardId);
+  } catch {
+    return null;
+  }
 }
 
 function formatEvent(event: GameEvent, players: readonly Player[]): string {
@@ -19,8 +31,12 @@ function formatEvent(event: GameEvent, players: readonly Player[]): string {
       return `${nameOf(players, event.playerId)} bought tile ${event.tileIndex} for $${event.price}.`;
     case 'built':
       return `${nameOf(players, event.playerId)} built on tile ${event.tileIndex} (${event.hotel ? 'hotel' : `${event.houses} house(s)`}).`;
-    case 'card_drawn':
-      return `${nameOf(players, event.playerId)} drew a ${event.deck} card.`;
+    case 'card_drawn': {
+      const card = getCardSafe(event.cardId);
+      return card
+        ? `${nameOf(players, event.playerId)} drew a ${event.deck} card: "${card.text}"`
+        : `${nameOf(players, event.playerId)} drew a ${event.deck} card.`;
+    }
     case 'jailed':
       return `${nameOf(players, event.playerId)} was sent to prison (${event.reason}).`;
     case 'left_jail':
@@ -31,6 +47,8 @@ function formatEvent(event: GameEvent, players: readonly Player[]): string {
       return `${nameOf(players, event.playerId)} cleared their debt.`;
     case 'bankrupt':
       return `${nameOf(players, event.playerId)} went bankrupt.`;
+    case 'turn_skipped':
+      return `${nameOf(players, event.playerId)} is on vacation and skips this turn.`;
     case 'turn_ended':
       return `Turn passed to ${nameOf(players, event.nextPlayerId)}.`;
     case 'game_over':

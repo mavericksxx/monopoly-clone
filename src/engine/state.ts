@@ -30,6 +30,12 @@ export function updateBank(state: GameState, patch: Partial<GameState['bank']>):
   return { ...state, bank: { ...state.bank, ...patch } };
 }
 
+/** Pools cash paid to the Bank into the Vacation pot when `vacationCash` is on; a no-op otherwise. */
+export function addToVacationPot(state: GameState, amount: number): GameState {
+  if (!state.settings.vacationCash || amount <= 0) return state;
+  return { ...state, vacationPot: state.vacationPot + amount };
+}
+
 // ─── Player queries ────────────────────────────────────────────────────────
 
 export function getPlayer(state: GameState, playerId: PlayerId): Player {

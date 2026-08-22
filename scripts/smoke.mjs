@@ -1,7 +1,8 @@
 /**
- * End-to-end smoke test against a DEPLOYED room server. Run it after every deploy:
+ * End-to-end smoke test against a running room server. Run it after every deploy:
  *
- *   node scripts/smoke.mjs [base-url]      # defaults to the production Worker
+ *   node scripts/smoke.mjs                 # defaults to the production Worker
+ *   node scripts/smoke.mjs http://localhost:8787   # against `npx wrangler dev`
  *
  * The 89 unit tests cover the engine and the map data, but nothing in `src/server/`
  * — and both bugs found on the first live playtest lived in that seam rather than in
@@ -25,27 +26,50 @@ async function newRoom() {
 
 function connect(code, name) {
   const ws = new WebSocket(`${WS}/api/rooms/${code}/ws`);
-  const c = { name, ws, playerId: null };
+  const c = { name, ws, playerId: null, seen: [], cursor: 0, waiter: null };
   ws.addEventListener('open', () => ws.send(JSON.stringify({ type: 'join', name })));
   ws.addEventListener('message', e => {
     const m = JSON.parse(e.data);
     if (m.type === 'joined') c.playerId = m.playerId;
+    c.seen.push(m);
+    if (c.waiter) c.waiter();
   });
   return c;
 }
 
-/** Resolves with the first message on `c` matching `pred`. */
+/**
+ * Resolves with the first message on `c` matching `pred`, INCLUDING messages that
+ * already landed before this call — every client buffers everything it receives.
+ *
+ * Attaching a fresh listener per wait is not good enough: the server broadcasts the
+ * new roster to the other players in the same tick it answers a join, so Alice's
+ * two-player roster is delivered while the script is still awaiting Bob's `joined`
+ * one microtask earlier. Against the deployed Worker network jitter hid that race;
+ * against a local `wrangler dev` it loses every time.
+ *
+ * The cursor only moves forward, so each wait consumes the messages it scanned past.
+ * That is what lets two waits with the same predicate (`type === 'room'`) mean
+ * "the next roster" rather than both matching the same stale one. It also means the
+ * waits on any one client must stay sequential — one pending `until` per client.
+ */
 function until(c, pred, label) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${c.name}: timed out waiting for ${label}`)), 10_000);
-    const onMessage = e => {
-      const m = JSON.parse(e.data);
-      if (!pred(m)) return;
-      clearTimeout(timer);
-      c.ws.removeEventListener('message', onMessage);
-      resolve(m);
+    const timer = setTimeout(() => {
+      c.waiter = null;
+      reject(new Error(`${c.name}: timed out waiting for ${label}`));
+    }, 10_000);
+    const scan = () => {
+      while (c.cursor < c.seen.length) {
+        const m = c.seen[c.cursor++];
+        if (!pred(m)) continue;
+        clearTimeout(timer);
+        c.waiter = null;
+        resolve(m);
+        return true;
+      }
+      return false;
     };
-    c.ws.addEventListener('message', onMessage);
+    if (!scan()) c.waiter = scan;
   });
 }
 

@@ -13,6 +13,7 @@
 import type { Debt, GameEvent, GameMap, GameState, Phase, PlayerId } from '../shared/types';
 import {
   activePlayers,
+  addToVacationPot,
   currentPlayer,
   hotelSaleValue,
   houseSaleValue,
@@ -30,15 +31,44 @@ export function phaseAfterLanding(state: GameState): Phase {
   return wasDouble && state.doublesCount < 3 ? 'AWAITING_ROLL' : 'AWAITING_END_TURN';
 }
 
-export function advanceTurn(state: GameState): GameState {
+/**
+ * Steps to the next non-bankrupt player, skipping (and decrementing) anyone
+ * sitting out a Vacation penalty. If every active player is currently
+ * skipping — including the degenerate case where the lap wraps back onto a
+ * bankrupt outgoing player (settleBankruptcy's caller) instead of a live one
+ * — this still terminates after one lap: it lands on the first active player
+ * it saw rather than looping forever or parking the turn on a bankrupt id.
+ * That player's own pending skip (if any) is still consumed, just not
+ * reported as a turn_skipped — they're the one who actually gets the turn,
+ * not someone passed over.
+ */
+export function advanceTurn(state: GameState): { state: GameState; events: GameEvent[] } {
   const n = state.turnOrder.length;
+  let next = state;
   let idx = state.currentPlayerIndex;
+  let firstActiveIdx = -1;
+  let broke = false;
+  const events: GameEvent[] = [];
   for (let i = 0; i < n; i++) {
     idx = (idx + 1) % n;
-    const id = state.turnOrder[idx]!;
-    if (!state.players.find((p) => p.id === id)!.bankrupt) break;
+    const id = next.turnOrder[idx]!;
+    const p = next.players.find((pl) => pl.id === id)!;
+    if (p.bankrupt) continue;
+    if (firstActiveIdx === -1) firstActiveIdx = idx;
+    if (p.skipTurns === 0) {
+      broke = true;
+      break;
+    }
+    next = updatePlayer(next, id, { skipTurns: p.skipTurns - 1 });
+    events.push({ type: 'turn_skipped', playerId: id });
   }
-  return { ...state, currentPlayerIndex: idx, doublesCount: 0 };
+  if (!broke) {
+    idx = firstActiveIdx;
+    // firstActiveIdx is always the first active player visited, so if it was processed at
+    // all its push is always events[0] — that player is the lander, not someone skipped.
+    events.shift();
+  }
+  return { state: { ...next, currentPlayerIndex: idx, doublesCount: 0 }, events };
 }
 
 /** Opens a Debt and immediately attempts to settle it (SPEC decisions 4, 5, 13). */
@@ -83,6 +113,8 @@ export function trySettleOrBankrupt(
       if (debt.creditor) {
         const creditor = next.players.find((p) => p.id === debt.creditor)!;
         next = updatePlayer(next, creditor.id, { cash: creditor.cash + debt.amount });
+      } else {
+        next = addToVacationPot(next, debt.amount);
       }
       out.push({ type: 'paid', from: debtor.id, to: debt.creditor, amount: debt.amount, reason: 'debt' });
 
@@ -182,9 +214,9 @@ export function settleBankruptcy(
   }
 
   if (debtorId === currentPlayer(next).id) {
-    next = advanceTurn(next);
-    next = { ...next, phase: 'AWAITING_ROLL' };
-    out.push({ type: 'turn_ended', nextPlayerId: currentPlayer(next).id });
+    const advanced = advanceTurn(next);
+    next = { ...advanced.state, phase: 'AWAITING_ROLL' };
+    out.push(...advanced.events, { type: 'turn_ended', nextPlayerId: currentPlayer(next).id });
   }
 
   return { state: next, events: out };
