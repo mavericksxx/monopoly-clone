@@ -48,6 +48,8 @@ button, input, select {
 .btn--danger { background: transparent; color: var(--danger); border-color: var(--danger); }
 .btn--big { padding: 0.8em 1.5em; font-size: 1.05rem; width: 100%; }
 .btn--small { padding: 0.3em 0.6em; font-size: 0.8rem; }
+.btn--quiet { background: transparent; border-color: transparent; color: var(--muted); align-self: center; }
+.btn--quiet:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
 
 .input {
   background: var(--surface);
@@ -97,6 +99,11 @@ button, input, select {
 .lobby__share-url { flex: 1; overflow-x: auto; white-space: nowrap; font-family: ui-monospace, monospace; color: var(--muted); }
 .lobby__body { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
 .lobby__waiting { color: var(--muted); text-align: center; }
+.lobby__test {
+  margin: 0; padding: 0.5rem 0.85rem; border-radius: var(--radius); font-size: 0.85rem;
+  color: var(--muted); background: var(--surface); border: 1px dashed var(--border);
+}
+.lobby__test code { font-family: ui-monospace, monospace; color: var(--text); }
 
 @media (max-width: 640px) {
   .lobby__body { grid-template-columns: 1fr; }

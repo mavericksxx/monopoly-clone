@@ -61,7 +61,8 @@ function DevPreview({ mode, mapId }: { mode: string; mapId: MapId }) {
     return (
       <Lobby
         code="DEMO" status="open" room={fixtureRoomMeta()} players={fixturePlayers()}
-        myPlayerId="p1" error={null} onJoin={() => {}} onUpdateSettings={() => {}} onStart={() => {}}
+        myPlayerId="p1" error={null} onJoin={() => {}} onLeave={() => {}}
+        onUpdateSettings={() => {}} onStart={() => {}}
       />
     );
   }

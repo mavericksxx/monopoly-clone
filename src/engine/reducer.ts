@@ -198,7 +198,10 @@ function dispatch(map: GameMap, state: GameState, playerId: PlayerId, action: Ga
   switch (action.type) {
     case 'start_game': {
       if (state.phase !== 'LOBBY') return reject(state, 'Game already started');
-      if (state.turnOrder.length < 2) return reject(state, 'Need at least 2 players');
+      // One seat is enough to start. A solo game is only reachable from the gated test
+      // mode in the client (`isTestMode`), and the worst a stranger can do by sending
+      // this action directly is play a board game against nobody.
+      if (state.turnOrder.length < 1) return reject(state, 'Need at least 1 player');
       return ok({ ...state, phase: 'AWAITING_ROLL' }, [{ type: 'game_started', turnOrder: state.turnOrder }]);
     }
     case 'roll':

@@ -206,10 +206,13 @@ export function settleBankruptcy(
   out.push({ type: 'bankrupt', playerId: debtorId, creditor });
 
   const remaining = activePlayers(next);
-  if (remaining.length === 1) {
-    const winner = remaining[0]!.id;
+  if (remaining.length <= 1) {
+    // Nobody left is reachable in a solo game (test mode) when the only player concedes.
+    // The game is over either way and `advanceTurn` has no seat to move to, but there is
+    // no winner to name, so the event is omitted rather than crowning the bankrupt.
+    const winner = remaining[0]?.id ?? null;
     next = { ...next, phase: 'GAME_OVER', winner };
-    out.push({ type: 'game_over', winner });
+    if (winner) out.push({ type: 'game_over', winner });
     return { state: next, events: out };
   }
 

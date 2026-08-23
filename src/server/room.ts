@@ -49,7 +49,12 @@ type PlayerRow = {
   color: string;
   join_order: number;
   connected: number;
+  /** Epoch ms of the moment this player went offline; NULL while they are connected. */
+  disconnected_at: number | null;
 };
+
+/** How long a disconnected player keeps their lobby seat when `LOBBY_GRACE_MS` is unset. */
+const DEFAULT_LOBBY_GRACE_MS = 120_000;
 
 interface SocketAttachment {
   playerId: string;
@@ -84,6 +89,22 @@ export class Room extends DurableObject<Env> {
         connected INTEGER NOT NULL DEFAULT 1
       )
     `);
+    // `CREATE TABLE IF NOT EXISTS` leaves an already-existing table untouched, so rooms
+    // created before the lobby-sweep shipped need the column added. Read first and only
+    // ALTER when it is genuinely missing: this runs inside `blockConcurrencyWhile` on
+    // every wake, and a throw here would leave the room permanently unbootable.
+    const columns = this.ctx.storage.sql
+      .exec<{ name: string }>('PRAGMA table_info(players)')
+      .toArray();
+    if (!columns.some((c) => c.name === 'disconnected_at')) {
+      this.ctx.storage.sql.exec('ALTER TABLE players ADD COLUMN disconnected_at INTEGER');
+    }
+  }
+
+  /** Test hook: see `Env.LOBBY_GRACE_MS`. */
+  private graceMs(): number {
+    const raw = Number(this.env.LOBBY_GRACE_MS);
+    return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_LOBBY_GRACE_MS;
   }
 
   // ── Worker-facing RPC ─────────────────────────────────────────────────────
@@ -146,14 +167,14 @@ export class Room extends DurableObject<Env> {
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
-    this.handleDisconnect(ws);
+    await this.handleDisconnect(ws);
     // 1005/1006 are reserved (no status / abnormal) and can't be sent back out.
     const safeCode = code === 1005 || code === 1006 ? 1000 : code;
     ws.close(safeCode, reason);
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {
-    this.handleDisconnect(ws);
+    await this.handleDisconnect(ws);
   }
 
   // ── Message routing ─────────────────────────────────────────────────────
@@ -162,6 +183,9 @@ export class Room extends DurableObject<Env> {
     switch (message.type) {
       case 'join':
         this.handleJoin(ws, message.name, message.token);
+        return;
+      case 'leave':
+        this.handleLeave(ws);
         return;
       case 'update_settings':
         this.handleUpdateSettings(ws, message.settings);
@@ -186,7 +210,10 @@ export class Room extends DurableObject<Env> {
     if (token) {
       const existing = this.getPlayerByToken(token);
       if (!existing) {
-        this.sendError(ws, 'invalid reconnect token');
+        // The client drops its stored identity on this code and falls back to the join
+        // form — without it a swept or departed player's socket would reconnect, be
+        // refused, and retry every 1.5s forever.
+        this.sendError(ws, 'invalid reconnect token', 'unknown_token');
         return;
       }
       this.closeOtherSocketsFor(existing.id, ws);
@@ -214,8 +241,12 @@ export class Room extends DurableObject<Env> {
 
     const playerId = crypto.randomUUID();
     const playerToken = crypto.randomUUID();
-    const joinOrder = players.length;
-    const color = COLOR_PALETTE[joinOrder % COLOR_PALETTE.length]!;
+    // Seats can now be vacated, so neither of these may be derived from the head count:
+    // reusing a departed player's join order would collide on the PRIMARY-KEY-free
+    // ordering, and reusing their colour would hand two live players the same token.
+    const joinOrder = Math.max(-1, ...players.map((p) => p.join_order)) + 1;
+    const taken = new Set(players.map((p) => p.color));
+    const color = COLOR_PALETTE.find((c) => !taken.has(c)) ?? COLOR_PALETTE[joinOrder % COLOR_PALETTE.length]!;
     const isFirst = players.length === 0;
 
     this.ctx.storage.sql.exec(
@@ -360,7 +391,73 @@ export class Room extends DurableObject<Env> {
     this.broadcast({ type: 'state', state });
   }
 
-  private handleDisconnect(ws: WebSocket): void {
+  /**
+   * Leaving is a lobby-only action. Mid-game departure would have to decide what happens
+   * to the leaver's cash, deeds and buildings — that is bankruptcy, which the game already
+   * has an action for, so this refuses rather than inventing a second answer.
+   */
+  private handleLeave(ws: WebSocket): void {
+    const playerId = this.boundPlayerId(ws);
+    if (!playerId) {
+      this.sendError(ws, 'join first');
+      return;
+    }
+    const row = this.getRoomRow();
+    if (!row) {
+      this.sendError(ws, 'room not found');
+      return;
+    }
+    if (row.started) {
+      this.sendError(ws, 'cannot leave a game in progress');
+      return;
+    }
+    this.removePlayer(playerId);
+    // Unbind rather than close: the socket stays usable, so the same tab can join again
+    // as a fresh player without waiting out the reconnect backoff.
+    ws.serializeAttachment(null);
+    this.broadcastRoomOrState(this.getRoomRow()!);
+  }
+
+  /** Drops a player's seat and hands the room to the next-longest-seated player if they were host. */
+  private removePlayer(playerId: string): void {
+    this.ctx.storage.sql.exec('DELETE FROM players WHERE id = ?', playerId);
+    const row = this.getRoomRow();
+    if (!row || row.host_id !== playerId) return;
+    const heir = this.getPlayers()[0] ?? null;
+    this.ctx.storage.sql.exec('UPDATE room SET host_id = ? WHERE id = 1', heir ? heir.id : null);
+  }
+
+  /**
+   * Sweeps lobby seats whose grace period has run out, then re-arms for the next one due.
+   * Re-arming only while a disconnected pre-start player exists is what keeps an idle room
+   * from waking itself forever.
+   */
+  async alarm(): Promise<void> {
+    const row = this.getRoomRow();
+    if (!row || row.started) return;
+    const grace = this.graceMs();
+    const cutoff = Date.now() - grace;
+    const players = this.getPlayers();
+    const stale = players.filter((p) => !p.connected && p.disconnected_at !== null && p.disconnected_at <= cutoff);
+    for (const p of stale) this.removePlayer(p.id);
+
+    const waiting = this.getPlayers().filter((p) => !p.connected && p.disconnected_at !== null);
+    if (waiting.length > 0) {
+      await this.ctx.storage.setAlarm(Math.min(...waiting.map((p) => p.disconnected_at!)) + grace);
+    }
+    if (stale.length > 0) this.broadcastRoomOrState(this.getRoomRow()!);
+  }
+
+  /**
+   * A Durable Object has a single alarm slot, so a second disconnect must never push the
+   * first player's deadline back — only ever move the alarm earlier.
+   */
+  private async armSweep(deadline: number): Promise<void> {
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > deadline) await this.ctx.storage.setAlarm(deadline);
+  }
+
+  private async handleDisconnect(ws: WebSocket): Promise<void> {
     const playerId = this.boundPlayerId(ws);
     if (!playerId) return;
     const row = this.getRoomRow();
@@ -371,6 +468,7 @@ export class Room extends DurableObject<Env> {
     // only go offline when this player has no other socket still open.
     if (this.hasOtherOpenSocket(playerId, ws)) return;
     this.setPlayerConnected(playerId, false, row);
+    if (!row.started) await this.armSweep(Date.now() + this.graceMs());
     const freshRow = this.getRoomRow()!;
     this.broadcastRoomOrState(freshRow);
   }
@@ -430,8 +528,9 @@ export class Room extends DurableObject<Env> {
   /** Updates connection status: the lobby roster pre-start, `GameState.players` after. */
   private setPlayerConnected(playerId: string, connected: boolean, row: RoomRow): void {
     this.ctx.storage.sql.exec(
-      'UPDATE players SET connected = ? WHERE id = ?',
+      'UPDATE players SET connected = ?, disconnected_at = ? WHERE id = ?',
       connected ? 1 : 0,
+      connected ? null : Date.now(),
       playerId,
     );
     if (row.started) {
@@ -467,6 +566,7 @@ export class Room extends DurableObject<Env> {
   private lobbyPlayerList(row: RoomRow): Player[] {
     const settings = this.settingsOf(row);
     const startIndex = getMap(settings.mapId).startIndex;
+    const grace = this.graceMs();
     return this.getPlayers().map((p) => ({
       id: p.id,
       name: p.name,
@@ -479,6 +579,9 @@ export class Room extends DurableObject<Env> {
       skipTurns: 0,
       bankrupt: false,
       connected: !!p.connected,
+      ...(p.connected || p.disconnected_at === null
+        ? {}
+        : { removeInMs: Math.max(0, p.disconnected_at + grace - Date.now()) }),
     }));
   }
 
@@ -512,8 +615,8 @@ export class Room extends DurableObject<Env> {
     ws.send(JSON.stringify(msg));
   }
 
-  private sendError(ws: WebSocket, message: string): void {
-    const msg: ServerMessage = { type: 'error', message };
+  private sendError(ws: WebSocket, message: string, code?: 'unknown_token'): void {
+    const msg: ServerMessage = code ? { type: 'error', message, code } : { type: 'error', message };
     ws.send(JSON.stringify(msg));
   }
 

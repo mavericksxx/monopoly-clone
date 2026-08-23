@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { DEFAULT_SETTINGS, type PlayerId, type Player, type RoomMeta, type RoomSettings } from '../../shared/types';
 import { PlayerList } from '../components/PlayerList';
 import { SettingsPanel } from '../components/SettingsPanel';
+import { isTestMode } from '../testMode';
 
 export function Lobby({
-  code, status, room, players, myPlayerId, error, onJoin, onUpdateSettings, onStart,
+  code, status, room, players, myPlayerId, error, onJoin, onLeave, onUpdateSettings, onStart,
 }: {
   code: string;
   status: 'connecting' | 'open' | 'closed';
@@ -13,6 +14,7 @@ export function Lobby({
   myPlayerId: PlayerId | null;
   error: string | null;
   onJoin: (name: string) => void;
+  onLeave: () => void;
   onUpdateSettings: (partial: Partial<RoomSettings>) => void;
   onStart: () => void;
 }) {
@@ -51,9 +53,17 @@ export function Lobby({
   }
 
   const isHost = room?.hostId === myPlayerId;
+  // Solo is a test-mode affordance; a real room still needs someone to play against.
+  const minPlayers = isTestMode() ? 1 : 2;
 
   return (
     <div className="lobby">
+      {isTestMode() && (
+        <p className="lobby__test">
+          Test mode, this tab only — you can start alone. For another player, open a new tab
+          on <code>{`${shareUrl}?test=1`}</code>.
+        </p>
+      )}
       <div className="lobby__share">
         <span className="lobby__share-url">{shareUrl}</span>
         <button className="btn" onClick={copyLink}>{copied ? 'Copied!' : 'Copy link'}</button>
@@ -65,12 +75,13 @@ export function Lobby({
       </div>
 
       {isHost ? (
-        <button className="btn btn--primary btn--big" onClick={onStart} disabled={players.length < 2}>
+        <button className="btn btn--primary btn--big" onClick={onStart} disabled={players.length < minPlayers}>
           Start game
         </button>
       ) : (
         <p className="lobby__waiting">Waiting for the host to start…</p>
       )}
+      <button className="btn btn--quiet" onClick={onLeave}>Leave room</button>
       {error && <p className="lobby__error">{error}</p>}
     </div>
   );

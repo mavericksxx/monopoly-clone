@@ -97,6 +97,10 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
       if (raw.token !== undefined && typeof raw.token !== 'string') return null;
       return raw.token ? { type: 'join', name, token: raw.token } : { type: 'join', name };
     }
+    case 'leave': {
+      if (extraKeys(raw, ['type'])) return null;
+      return { type: 'leave' };
+    }
     case 'update_settings': {
       if (extraKeys(raw, ['type', 'settings'])) return null;
       if (!isValidSettingsPatch(raw.settings)) return null;

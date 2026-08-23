@@ -140,6 +140,12 @@ export interface Player {
   skipTurns: number;
   bankrupt: boolean;
   connected: boolean;
+  /**
+   * Lobby roster only — never present on a player inside `GameState`. Milliseconds left
+   * before a disconnected player is dropped from the room, measured when the server sent
+   * the roster (so the client counts down from receipt rather than trusting clock skew).
+   */
+  removeInMs?: number;
 }
 
 export interface Ownership {
@@ -239,6 +245,7 @@ export interface RoomMeta {
 
 export type ClientMessage =
   | { type: 'join'; name: string; token?: string }
+  | { type: 'leave' }
   | { type: 'update_settings'; settings: Partial<RoomSettings> }
   | { type: 'action'; action: GameAction };
 
@@ -247,4 +254,9 @@ export type ServerMessage =
   | { type: 'room'; room: RoomMeta; players: readonly Player[] }
   | { type: 'state'; state: GameState }
   | { type: 'events'; events: readonly GameEvent[]; version: number }
-  | { type: 'error'; message: string };
+  /**
+   * `code` is set only where the client has to react structurally rather than just show
+   * the text: `unknown_token` means the stored identity is dead (the player left, or was
+   * swept after disconnecting), so the client must drop it instead of retrying forever.
+   */
+  | { type: 'error'; message: string; code?: 'unknown_token' };

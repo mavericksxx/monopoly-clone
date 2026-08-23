@@ -1,4 +1,5 @@
 import { useRoomConnection } from '../net';
+import { navigate } from '../router';
 import { getMap } from '../mapSource';
 import { Lobby } from './Lobby';
 import { Game } from './Game';
@@ -31,6 +32,7 @@ export function RoomContainer({ code }: { code: string }) {
       myPlayerId={conn.playerId}
       error={conn.error}
       onJoin={conn.join}
+      onLeave={() => { conn.leave(); navigate('/'); }}
       onUpdateSettings={conn.updateSettings}
       onStart={conn.startGame}
     />
