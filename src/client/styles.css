@@ -212,6 +212,9 @@ button, input, select {
      tiles falls off the screen on a short window. */
   max-width: min(980px, calc(100vh - 2.5rem));
   aspect-ratio: 1 / 1;
+  /* Size container for the token layer, which sits outside any one tile but still has
+     to scale with the board rather than holding a fixed pixel size on a short window. */
+  container-type: size;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   gap: 2px;
@@ -222,6 +225,10 @@ button, input, select {
 
 .tile {
   position: relative;
+  /* Makes the tile a size container so `.tile__name` can size its type against the
+     tile itself. `cqmin` is the tile's shorter side, which on every side tile is the
+     run direction — the axis a name has to fit across. */
+  container-type: size;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -242,16 +249,25 @@ button, input, select {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: calc(0.1rem * var(--tile-scale, 1));
-  padding: 3px;
+  gap: 3cqmin;
+  padding: 4cqmin;
   text-align: center;
-  font-size: calc(0.66rem * var(--tile-scale, 1));
-  line-height: 1.1;
+  /* Everything inside a tile is a percentage of the tile's own short axis (`cqmin`,
+     see `container-type` on `.tile`) rather than a rem scaled by tile count. A rem-based
+     size holds still while the board shrinks with the window, so the same content that
+     fits a 980px board overflows a 520px one; proportions of the tile fit at every size. */
+  font-size: 19cqmin;
+  line-height: 1.12;
 }
 .tile--o-left .tile__inner,
 .tile--o-right .tile__inner { writing-mode: vertical-rl; }
 .tile--o-left .tile__inner { transform: rotate(180deg); }
-.tile--o-top .tile__inner { flex-direction: column-reverse; }
+/* Every run stacks inner-edge-first. In a vertical writing mode the block axis runs
+   right-to-left, and the left run is rotated 180deg on top of that, so both columns
+   need reversing to land the badge on the same edge the horizontal runs put it. */
+.tile--o-top .tile__inner,
+.tile--o-left .tile__inner,
+.tile--o-right .tile__inner { flex-direction: column-reverse; }
 
 /* The owner bar is thick enough to read across the table, so the text has to be
    held off the edge it sits on — reserved whether or not the tile is owned, or
@@ -259,7 +275,10 @@ button, input, select {
    `.tile--o-left` rotates its inner box 180deg, which swaps physical left/right;
    that is why it reserves on the same side as `.tile--o-right` rather than the
    mirrored one. */
-.tile { --owner-bar: calc(0.62rem * var(--tile-scale, 1)); }
+.tile { --owner-bar: 16cqmin; --name-max: 19cqmin; }
+/* A corner is square, so its name shares the short axis with a full-size icon and can
+   run to three lines ("Go to prison"); it gets a tighter cap than the side runs. */
+.tile--corner { --name-max: 12cqmin; }
 .tile--o-bottom .tile__inner { padding-top: var(--owner-bar); }
 .tile--o-top .tile__inner { padding-bottom: var(--owner-bar); }
 .tile--o-left .tile__inner,
@@ -268,34 +287,47 @@ button, input, select {
 .tile__name {
   font-weight: 600;
   letter-spacing: 0.01em;
-  /* A long name on a narrow board must trim from one end, not bleed off both. */
+  /* Names wrap now rather than ellipsing to "Water Co…". A side tile is narrow along
+     its run but deep into the board, and that depth is exactly where a second line
+     goes — the same trade a real board makes. The tile clips anything past two lines. */
   min-width: 0;
   min-height: 0;
   max-width: 100%;
   max-height: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Wrap between words only. Breaking inside one turns "Manchester" into "Manchest/r",
+     which is worse than clipping the tail of a name that genuinely does not fit. */
+  overflow-wrap: normal;
+  /* Shrink to fit rather than clip. The inner box leaves ~87% of the tile's short axis
+     for text and a character costs up to ~0.65em at the small sizes a short window
+     forces, so `87 / 0.65 ≈ 134cqmin` divided by the longest word's length is the
+     largest type that still fits it. Whichever of that and the tile's normal size is
+     smaller wins, so short names are never blown up, and the long ones step down on a
+     cramped board instead of losing their tail. Measured against the worst case, so a
+     name with narrow glyphs ends up a little smaller than it strictly had to be. */
+  font-size: min(var(--name-max), calc(134cqmin / var(--name-chars, 8)));
 }
-.tile__icon { font-size: calc(1.35rem * var(--tile-scale, 1)); line-height: 1; }
-.tile--corner .tile__icon { font-size: calc(1.95rem * var(--tile-scale, 1)); }
+/* No corner-specific size: a corner's container is 1.5x a side tile's, so the same
+   percentage already renders it 1.5x larger. */
+.tile__icon { font-size: 40cqmin; line-height: 1; }
+.tile--corner .tile__icon { font-size: 34cqmin; }
 .tile__sub { color: var(--text); font-weight: 700; }
-.tile__price { color: var(--muted); font-size: calc(0.6rem * var(--tile-scale, 1)); }
-.tile--corner .tile__name { font-weight: 700; font-size: calc(0.72rem * var(--tile-scale, 1)); }
+.tile__price { color: var(--muted); font-size: 18cqmin; }
+.tile--corner .tile__name { font-weight: 700; }
 
 /* The country reads as a round flag badge rather than a full-bleed rectangle.
    `overflow: hidden` on a circle crops the emoji's own aspect to a disc; where the
    platform has no flag glyph this degrades to the two-letter code, still legible. */
 .tile__flag {
-  width: calc(1.15rem * var(--tile-scale, 1));
-  height: calc(1.15rem * var(--tile-scale, 1));
+  width: 38cqmin;
+  height: 38cqmin;
   flex-shrink: 0;
   border-radius: 50%;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(0.95rem * var(--tile-scale, 1));
+  font-size: 30cqmin;
   line-height: 1;
   background: rgba(255,255,255,0.08);
   box-shadow: 0 0 0 1px rgba(255,255,255,0.22), 0 1px 4px rgba(0,0,0,0.5);
@@ -336,23 +368,26 @@ button, input, select {
 .token {
   position: absolute;
   transform: translate(-50%, -50%);
-  width: calc(2.3rem * var(--tile-scale, 1));
-  height: calc(2.3rem * var(--tile-scale, 1));
+  /* Sized off the board (`cqmin`), with the face laid out in `em` so eyes and pupils
+     follow. Roughly two thirds of a side tile's short axis on any board size. */
+  font-size: 5.1cqmin;
+  width: 1em;
+  height: 1em;
   border-radius: 50%;
   border: 2px solid rgba(0,0,0,0.45);
   box-shadow: 0 3px 10px rgba(0,0,0,0.65), inset 0 -4px 8px rgba(0,0,0,0.22);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: calc(0.12rem * var(--tile-scale, 1));
+  gap: 0.05em;
   pointer-events: auto;
   /* One step of the ring walk. Must stay under `useWalkedTile`'s interval or a
      fast walk would still be sliding when the next step is set. */
   transition: left 0.12s linear, top 0.12s linear;
 }
 .token__eye {
-  width: calc(0.62rem * var(--tile-scale, 1));
-  height: calc(0.72rem * var(--tile-scale, 1));
+  width: 0.27em;
+  height: 0.31em;
   border-radius: 50%;
   background: #fff;
   box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);
@@ -364,8 +399,8 @@ button, input, select {
   left: 50%;
   top: 54%;
   transform: translate(-50%, -50%);
-  width: calc(0.3rem * var(--tile-scale, 1));
-  height: calc(0.3rem * var(--tile-scale, 1));
+  width: 0.13em;
+  height: 0.13em;
   border-radius: 50%;
   background: #111820;
 }
@@ -498,12 +533,6 @@ button, input, select {
   color: var(--muted);
 }
 
-@media (min-width: 700px) {
-  .tile__inner { font-size: calc(0.6rem * var(--tile-scale, 1)); }
-  .tile__icon { font-size: calc(1.25rem * var(--tile-scale, 1)); }
-  .tile--corner .tile__icon { font-size: calc(1.9rem * var(--tile-scale, 1)); }
-  .tile--corner .tile__name { font-size: calc(0.66rem * var(--tile-scale, 1)); }
-}
 
 /* ─── Sidebar contents ──────────────────────────────────────────────── */
 

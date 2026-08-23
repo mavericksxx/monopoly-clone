@@ -26,6 +26,38 @@ export interface RingLayout {
   perSide: number;
   /** positions[i] is tile i's 1-indexed CSS Grid row/column. */
   positions: readonly GridPos[];
+  /** Track sizes in grid units, outermost first: `[corner, 1 … 1, corner]`. */
+  tracks: readonly number[];
+}
+
+/**
+ * How much bigger a corner track is than a side track.
+ *
+ * On a real board the corners are square and the side tiles are narrow rectangles
+ * standing on end — that shape is where a tile gets its depth into the board, and
+ * with it the room to stack a name, a price and a flag. A uniform grid gives every
+ * tile a square instead, which is why ours read as small: same area, no depth.
+ *
+ * A corner track carries both a corner's width and the depth of every tile on the
+ * two runs it touches, so this one number sets both. 1.5 matches the proportion
+ * richup uses (130px corners against 88px side tiles).
+ */
+export const CORNER_TRACK_RATIO = 1.5;
+
+/**
+ * Where a 1-indexed grid track sits along the board's edge, as percentages of that
+ * edge. The token overlay needs this because the tracks are no longer equal, so
+ * `100 / side` per cell is no longer the answer.
+ */
+export function trackSpan(
+  tracks: readonly number[],
+  index: number,
+): { centre: number; size: number } {
+  const total = tracks.reduce((a, b) => a + b, 0);
+  let before = 0;
+  for (let i = 0; i < index - 1; i++) before += tracks[i] ?? 0;
+  const size = tracks[index - 1] ?? 1;
+  return { centre: ((before + size / 2) / total) * 100, size: (size / total) * 100 };
 }
 
 const EDGES: readonly Edge[] = ['bottom', 'left', 'top', 'right'];
@@ -68,5 +100,11 @@ export function ringLayout(tileCount: number): RingLayout {
     positions.push({ row, col, edge, isCorner: posInSegment === 0 });
   }
 
-  return { side, perSide, positions };
+  const tracks = [
+    CORNER_TRACK_RATIO,
+    ...Array.from({ length: perSide }, () => 1),
+    CORNER_TRACK_RATIO,
+  ];
+
+  return { side, perSide, positions, tracks };
 }

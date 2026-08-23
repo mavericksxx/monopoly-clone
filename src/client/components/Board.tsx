@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { GameEvent, GameMap, GameState, Player, Tile } from '../../shared/types';
-import { ringLayout, type Edge, type GridPos } from '../ringLayout';
+import { CORNER_TRACK_RATIO, ringLayout, trackSpan, type Edge, type GridPos } from '../ringLayout';
 import { countryTint } from '../colors';
 import { countryFlag, tileIcon, tileSubLabel } from '../tileArt';
 import { EventLog, getCardSafe } from './EventLog';
@@ -218,26 +218,29 @@ function centreNudge(pos: GridPos): readonly [number, number] {
 }
 
 function Token({
-  player, positions, side, offset, isCurrent,
+  player, positions, tracks, offset, isCurrent,
 }: {
   player: Player;
   positions: readonly GridPos[];
-  side: number;
+  tracks: readonly number[];
   offset: readonly [number, number];
   isCurrent: boolean;
 }) {
   const shownTile = useWalkedTile(player.tileIndex, positions.length);
   const pos = positions[shownTile];
   if (!pos) return null;
-  const cell = 100 / side;
+  // Corner tracks are wider than side tracks, so a token's offsets are measured
+  // against the size of the track it actually sits in, not one uniform cell.
+  const col = trackSpan(tracks, pos.col);
+  const row = trackSpan(tracks, pos.row);
   const [nx, ny] = centreNudge(pos);
   const [dx, dy] = offset;
   return (
     <span
       className={`token${isCurrent ? ' token--turn' : ''}`}
       style={{
-        left: `${(pos.col - 0.5 + nx + dx) * cell}%`,
-        top: `${(pos.row - 0.5 + ny + dy) * cell}%`,
+        left: `${col.centre + (nx + dx) * col.size}%`,
+        top: `${row.centre + (ny + dy) * row.size}%`,
         background: player.color,
       }}
       title={player.name}
@@ -249,9 +252,9 @@ function Token({
 }
 
 function TokenLayer({
-  side, positions, players, currentPlayerId,
+  tracks, positions, players, currentPlayerId,
 }: {
-  side: number;
+  tracks: readonly number[];
   positions: readonly GridPos[];
   players: readonly Player[];
   currentPlayerId: string | undefined;
@@ -273,7 +276,7 @@ function TokenLayer({
             key={p.id}
             player={p}
             positions={positions}
-            side={side}
+            tracks={tracks}
             offset={tokenOffset(group.indexOf(p), group.length)}
             isCurrent={p.id === currentPlayerId}
           />
@@ -290,7 +293,9 @@ export function Board({
   state: GameState;
   events?: readonly GameEvent[];
 }) {
-  const { side, positions } = ringLayout(map.tiles.length);
+  const { side, positions, tracks } = ringLayout(map.tiles.length);
+  const template = tracks.map(t => `${t}fr`).join(' ');
+  const units = tracks.reduce((a, b) => a + b, 0);
   const { drawnCard, rolling } = useBoardEventEffects(events);
   // One more whole spin per roll; the dice transition to the new rotation and settle.
   const [turns, setTurns] = useState(0);
@@ -300,11 +305,12 @@ export function Board({
     <div
       className="board"
       style={{
-        gridTemplateColumns: `repeat(${side}, 1fr)`,
-        gridTemplateRows: `repeat(${side}, 1fr)`,
+        gridTemplateColumns: template,
+        gridTemplateRows: template,
         // Bigger boards mean narrower tiles, so text scales with the ring rather
-        // than being tuned for one tile count. 11 is the 40-tile board's `side`.
-        ['--tile-scale' as string]: String(11 / side),
+        // than being tuned for one tile count. 12 is the 40-tile board's width in
+        // track units: 9 side tracks plus two corners at `CORNER_TRACK_RATIO`.
+        ['--tile-scale' as string]: String((9 + 2 * CORNER_TRACK_RATIO) / units),
       }}
     >
       {map.tiles.map((tile, i) => {
@@ -323,7 +329,7 @@ export function Board({
         );
       })}
       <TokenLayer
-        side={side}
+        tracks={tracks}
         positions={positions}
         players={state.players}
         currentPlayerId={state.turnOrder[state.currentPlayerIndex]}
@@ -364,6 +370,10 @@ function BoardTile({
   // Corners read upright; the four runs read along their own edge, which is what
   // buys side tiles enough room for a full city name instead of an ellipsis.
   const orient = isCorner ? 'corner' : edge;
+  // A name wraps between words, so what has to fit on one line is its longest word.
+  // The CSS shrinks the type to fit that many characters across the tile's short axis
+  // when the default size would overflow — see `--name-chars` in styles.css.
+  const longestWord = Math.max(...tile.name.split(' ').map(w => w.length));
 
   return (
     <div
@@ -371,12 +381,16 @@ function BoardTile({
       style={{ gridRow: row, gridColumn: col, backgroundImage: tile.type === 'city' ? countryTint(tile.countryId) : undefined }}
       title={tile.name}
     >
+      {/* Inner edge first: the flag or icon sits nearest the middle of the board, then
+          the name, then the price at the outer rim. That ordering is what keeps a tile
+          readable while occupied — a token lands on the inner edge, so it covers the
+          badge rather than the name. */}
       <div className="tile__inner">
-        <div className="tile__name">{tile.name}</div>
+        {tile.type === 'city' && <div className="tile__flag">{countryFlag(tile.countryId)}</div>}
         {icon && <div className="tile__icon">{icon}</div>}
+        <div className="tile__name" style={{ ['--name-chars' as string]: longestWord }}>{tile.name}</div>
         {sub && <div className="tile__sub">{sub}</div>}
         {'price' in tile && <div className="tile__price">${tile.price}</div>}
-        {tile.type === 'city' && <div className="tile__flag">{countryFlag(tile.countryId)}</div>}
       </div>
       {owner && <div className="tile__owner" style={{ background: owner.color }} title={owner.name} />}
       {(houses > 0 || hotel) && (
