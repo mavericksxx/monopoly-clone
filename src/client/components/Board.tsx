@@ -209,12 +209,14 @@ function useWalkedTile(target: number, tileCount: number): number {
  * enough not to need it.
  */
 function badgeNudge(pos: GridPos): readonly [number, number] {
-  if (pos.isCorner) return [0, 0];
+  // A corner reads upright and stacks its name above its icon, so the token drops onto
+  // the icon rather than sitting dead centre across the name.
+  if (pos.isCorner) return [0, 0.18];
   switch (pos.edge) {
-    case 'bottom': return [0, 0.2];
-    case 'top': return [0, -0.2];
-    case 'left': return [-0.2, 0];
-    default: return [0.2, 0];
+    case 'bottom': return [0, 0.28];
+    case 'top': return [0, -0.28];
+    case 'left': return [-0.28, 0];
+    default: return [0.28, 0];
   }
 }
 
@@ -392,15 +394,15 @@ function BoardTile({
           <div className="tile__name">{tile.name}</div>
           {sub && <div className="tile__sub">{sub}</div>}
           {'price' in tile && <div className="tile__price">${tile.price}</div>}
+          {(houses > 0 || hotel) && (
+            <div className="tile__buildings">{hotel ? '🏨' : '🏠'.repeat(houses)}</div>
+          )}
         </div>
         {tile.type === 'city'
           ? <div className="tile__flag">{countryFlag(tile.countryId)}</div>
           : icon && <div className="tile__icon">{icon}</div>}
       </div>
       {owner && <div className="tile__owner" style={{ background: owner.color }} title={owner.name} />}
-      {(houses > 0 || hotel) && (
-        <div className="tile__buildings">{hotel ? '🏨' : '🏠'.repeat(houses)}</div>
-      )}
     </div>
   );
 }
