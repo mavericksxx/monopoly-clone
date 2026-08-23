@@ -12,16 +12,19 @@ import type { GameAction, GameMap, GameState, PlayerId } from '../../shared/type
  * after the phase-specific branches, instead of being threaded into each.
  */
 export function ActionBar({
-  map, state, myPlayerId, onAction,
+  map, state, myPlayerId, actingPlayerId, onAction,
 }: {
   map: GameMap;
   state: GameState;
+  /** This browser's own seat — used only to label a turn taken on a dummy's behalf. */
   myPlayerId: PlayerId;
+  /** The seat these buttons act for, which is a dummy of mine whenever the game waits on one. */
+  actingPlayerId: PlayerId;
   onAction: (action: GameAction) => void;
 }) {
-  const me = state.players.find(p => p.id === myPlayerId);
+  const me = state.players.find(p => p.id === actingPlayerId);
   const currentPlayerId = state.turnOrder[state.currentPlayerIndex];
-  const isMyTurn = currentPlayerId === myPlayerId;
+  const isMyTurn = currentPlayerId === actingPlayerId;
 
   if (state.phase === 'GAME_OVER') {
     const winnerName = state.players.find(p => p.id === state.winner)?.name ?? 'Someone';
@@ -35,14 +38,14 @@ export function ActionBar({
   let phaseContent: React.ReactNode;
 
   if (state.phase === 'RESOLVING_DEBT') {
-    phaseContent = state.debt?.debtor !== myPlayerId
+    phaseContent = state.debt?.debtor !== actingPlayerId
       ? <p className="action-bar__waiting">Waiting for debt to be settled…</p>
       : (
         <>
           <p className="action-bar__waiting">
             You owe ${state.debt.amount}. Sell buildings to cover it.
           </p>
-          <BuildingControls map={map} state={state} myPlayerId={myPlayerId} onAction={onAction} />
+          <BuildingControls map={map} state={state} myPlayerId={actingPlayerId} onAction={onAction} />
         </>
       );
   } else if (!isMyTurn) {
@@ -73,7 +76,7 @@ export function ActionBar({
           </>
         )}
         {(state.phase === 'AWAITING_ROLL' || state.phase === 'AWAITING_END_TURN') && (
-          <BuildingControls map={map} state={state} myPlayerId={myPlayerId} onAction={onAction} />
+          <BuildingControls map={map} state={state} myPlayerId={actingPlayerId} onAction={onAction} />
         )}
         {state.phase === 'AWAITING_END_TURN' && (
           <button className="btn btn--primary" onClick={() => onAction({ type: 'end_turn' })}>End turn</button>
@@ -84,6 +87,9 @@ export function ActionBar({
 
   return (
     <div className="action-bar">
+      {actingPlayerId !== myPlayerId && (
+        <p className="action-bar__acting">Playing as {me.name}</p>
+      )}
       {phaseContent}
       <BankruptButton onAction={onAction} />
     </div>

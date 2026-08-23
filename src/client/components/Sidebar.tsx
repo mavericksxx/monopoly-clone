@@ -3,11 +3,12 @@ import { PlayerCard } from './PlayerCard';
 import { ActionBar } from './ActionBar';
 
 export function Sidebar({
-  map, state, myPlayerId, onAction,
+  map, state, myPlayerId, actingPlayerId, onAction,
 }: {
   map: GameMap;
   state: GameState;
   myPlayerId: PlayerId;
+  actingPlayerId: PlayerId;
   onAction: (action: GameAction) => void;
 }) {
   const currentPlayerId = state.turnOrder[state.currentPlayerIndex];
@@ -26,7 +27,10 @@ export function Sidebar({
           />
         ))}
       </div>
-      <ActionBar map={map} state={state} myPlayerId={myPlayerId} onAction={onAction} />
+      <ActionBar
+        map={map} state={state} myPlayerId={myPlayerId}
+        actingPlayerId={actingPlayerId} onAction={onAction}
+      />
     </div>
   );
 }

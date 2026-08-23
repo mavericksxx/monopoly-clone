@@ -101,15 +101,29 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
       if (extraKeys(raw, ['type'])) return null;
       return { type: 'leave' };
     }
+    case 'add_dummy': {
+      if (extraKeys(raw, ['type'])) return null;
+      return { type: 'add_dummy' };
+    }
+    case 'remove_player': {
+      if (extraKeys(raw, ['type', 'playerId'])) return null;
+      if (typeof raw.playerId !== 'string' || raw.playerId.length === 0) return null;
+      return { type: 'remove_player', playerId: raw.playerId };
+    }
     case 'update_settings': {
       if (extraKeys(raw, ['type', 'settings'])) return null;
       if (!isValidSettingsPatch(raw.settings)) return null;
       return { type: 'update_settings', settings: raw.settings };
     }
     case 'action': {
-      if (extraKeys(raw, ['type', 'action'])) return null;
+      if (extraKeys(raw, ['type', 'action', 'asPlayerId'])) return null;
       if (!isValidGameAction(raw.action)) return null;
-      return { type: 'action', action: raw.action };
+      // Shape only. Whether the sender may act as this id is decided in room.ts against
+      // the players table, never here and never from anything the client asserts.
+      if (raw.asPlayerId !== undefined && typeof raw.asPlayerId !== 'string') return null;
+      return raw.asPlayerId
+        ? { type: 'action', action: raw.action, asPlayerId: raw.asPlayerId }
+        : { type: 'action', action: raw.action };
     }
     default:
       return null;

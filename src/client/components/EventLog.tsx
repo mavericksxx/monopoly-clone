@@ -56,8 +56,16 @@ function formatEvent(event: GameEvent, players: readonly Player[]): string {
   }
 }
 
-export function EventLog({ events, players }: { events: readonly GameEvent[]; players: readonly Player[] }) {
-  const recent = events.slice(-100).reverse();
+export function EventLog({
+  events, players, limit = 100,
+}: {
+  events: readonly GameEvent[];
+  players: readonly Player[];
+  /** How many of the most recent entries to render. The board's centre shows only a
+   * handful, big enough to read across the table, rather than a scrollable wall. */
+  limit?: number;
+}) {
+  const recent = events.slice(-limit).reverse();
   return (
     <div className="event-log">
       <h3 className="event-log__title">Log</h3>

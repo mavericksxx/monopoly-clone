@@ -203,17 +203,18 @@ function useWalkedTile(target: number, tileCount: number): number {
 }
 
 /**
- * Shifts a token toward the middle of the board so it sits above the tile's own
- * label instead of covering it — the tile has to stay readable while occupied.
- * Corners are square and roomy enough not to need it.
+ * Shifts a token toward the outer rim of the board, where a tile keeps its flag or icon.
+ * The name and price sit at the inner edge, so the token covers the badge instead of the
+ * words — a tile has to stay readable while it is occupied. Corners are square and roomy
+ * enough not to need it.
  */
-function centreNudge(pos: GridPos): readonly [number, number] {
+function badgeNudge(pos: GridPos): readonly [number, number] {
   if (pos.isCorner) return [0, 0];
   switch (pos.edge) {
-    case 'bottom': return [0, -0.22];
-    case 'top': return [0, 0.22];
-    case 'left': return [0.22, 0];
-    default: return [-0.22, 0];
+    case 'bottom': return [0, 0.2];
+    case 'top': return [0, -0.2];
+    case 'left': return [-0.2, 0];
+    default: return [0.2, 0];
   }
 }
 
@@ -233,7 +234,7 @@ function Token({
   // against the size of the track it actually sits in, not one uniform cell.
   const col = trackSpan(tracks, pos.col);
   const row = trackSpan(tracks, pos.row);
-  const [nx, ny] = centreNudge(pos);
+  const [nx, ny] = badgeNudge(pos);
   const [dx, dy] = offset;
   return (
     <span
@@ -336,17 +337,23 @@ export function Board({
       />
       <div className="board__center" style={{ gridRow: `2 / ${side}`, gridColumn: `2 / ${side}` }}>
         <div className="board__center-inner">
-          {state.lastRoll && (
-            <div className="board__dice">
-              <Die value={state.lastRoll[0]} turns={turns} />
-              <Die value={state.lastRoll[1]} turns={turns} />
-            </div>
-          )}
-          <div className="board__phase">{formatPhase(state.phase)}</div>
-          {state.vacationPot > 0 && (
-            <div className="board__vacation-pot">Vacation pot: ${state.vacationPot}</div>
-          )}
-          <EventLog events={events} players={state.players} />
+          {/* The dice sit centred in the space above the log rather than pinned to the
+              top edge. The popup stays a sibling of the stage, not a child: it is
+              `inset: 0` against `board__center-inner`, and inside the stage it would
+              shrink to the dice. */}
+          <div className="board__stage">
+            {state.lastRoll && (
+              <div className="board__dice">
+                <Die value={state.lastRoll[0]} turns={turns} />
+                <Die value={state.lastRoll[1]} turns={turns} />
+              </div>
+            )}
+            <div className="board__phase">{formatPhase(state.phase)}</div>
+            {state.vacationPot > 0 && (
+              <div className="board__vacation-pot">Vacation pot: ${state.vacationPot}</div>
+            )}
+          </div>
+          <EventLog events={events} players={state.players} limit={6} />
           {drawnCard && <DrawnCardPanel event={drawnCard} players={state.players} />}
         </div>
       </div>
@@ -370,10 +377,6 @@ function BoardTile({
   // Corners read upright; the four runs read along their own edge, which is what
   // buys side tiles enough room for a full city name instead of an ellipsis.
   const orient = isCorner ? 'corner' : edge;
-  // A name wraps between words, so what has to fit on one line is its longest word.
-  // The CSS shrinks the type to fit that many characters across the tile's short axis
-  // when the default size would overflow — see `--name-chars` in styles.css.
-  const longestWord = Math.max(...tile.name.split(' ').map(w => w.length));
 
   return (
     <div
@@ -381,16 +384,18 @@ function BoardTile({
       style={{ gridRow: row, gridColumn: col, backgroundImage: tile.type === 'city' ? countryTint(tile.countryId) : undefined }}
       title={tile.name}
     >
-      {/* Inner edge first: the flag or icon sits nearest the middle of the board, then
-          the name, then the price at the outer rim. That ordering is what keeps a tile
-          readable while occupied — a token lands on the inner edge, so it covers the
-          badge rather than the name. */}
+      {/* Name and price at the inner edge, the flag or icon pushed to the outer rim with
+          the leftover depth between them. The token lands on that badge rather than on the
+          words, which is what keeps a tile readable while it is occupied. */}
       <div className="tile__inner">
-        {tile.type === 'city' && <div className="tile__flag">{countryFlag(tile.countryId)}</div>}
-        {icon && <div className="tile__icon">{icon}</div>}
-        <div className="tile__name" style={{ ['--name-chars' as string]: longestWord }}>{tile.name}</div>
-        {sub && <div className="tile__sub">{sub}</div>}
-        {'price' in tile && <div className="tile__price">${tile.price}</div>}
+        <div className="tile__text">
+          <div className="tile__name">{tile.name}</div>
+          {sub && <div className="tile__sub">{sub}</div>}
+          {'price' in tile && <div className="tile__price">${tile.price}</div>}
+        </div>
+        {tile.type === 'city'
+          ? <div className="tile__flag">{countryFlag(tile.countryId)}</div>
+          : icon && <div className="tile__icon">{icon}</div>}
       </div>
       {owner && <div className="tile__owner" style={{ background: owner.color }} title={owner.name} />}
       {(houses > 0 || hotel) && (

@@ -51,6 +51,8 @@ type PlayerRow = {
   connected: number;
   /** Epoch ms of the moment this player went offline; NULL while they are connected. */
   disconnected_at: number | null;
+  /** Id of the real player who added and drives this seat; NULL for ordinary players. */
+  dummy_of: string | null;
 };
 
 /** How long a disconnected player keeps their lobby seat when `LOBBY_GRACE_MS` is unset. */
@@ -98,6 +100,9 @@ export class Room extends DurableObject<Env> {
       .toArray();
     if (!columns.some((c) => c.name === 'disconnected_at')) {
       this.ctx.storage.sql.exec('ALTER TABLE players ADD COLUMN disconnected_at INTEGER');
+    }
+    if (!columns.some((c) => c.name === 'dummy_of')) {
+      this.ctx.storage.sql.exec('ALTER TABLE players ADD COLUMN dummy_of TEXT');
     }
   }
 
@@ -187,11 +192,17 @@ export class Room extends DurableObject<Env> {
       case 'leave':
         this.handleLeave(ws);
         return;
+      case 'add_dummy':
+        this.handleAddDummy(ws);
+        return;
+      case 'remove_player':
+        this.handleRemovePlayer(ws, message.playerId);
+        return;
       case 'update_settings':
         this.handleUpdateSettings(ws, message.settings);
         return;
       case 'action':
-        this.handleAction(ws, message.action);
+        this.handleAction(ws, message.action, message.asPlayerId);
         return;
     }
   }
@@ -297,7 +308,7 @@ export class Room extends DurableObject<Env> {
     });
   }
 
-  private handleAction(ws: WebSocket, action: GameAction): void {
+  private handleAction(ws: WebSocket, action: GameAction, asPlayerId: string | undefined): void {
     const playerId = this.boundPlayerId(ws);
     if (!playerId) {
       this.sendError(ws, 'join first');
@@ -309,9 +320,23 @@ export class Room extends DurableObject<Env> {
       return;
     }
 
+    // Starting is the host's own act, never a dummy's, so it deliberately ignores
+    // `asPlayerId` rather than routing a dummy into the host check.
     if (action.type === 'start_game') {
       this.handleStartGame(ws, playerId, row);
       return;
+    }
+
+    // Acting for someone else is allowed only for your own dummies, checked against the
+    // table on every action — the client's claim is never cached or trusted.
+    let actorId = playerId;
+    if (asPlayerId !== undefined) {
+      const target = this.getPlayerById(asPlayerId);
+      if (!target || target.dummy_of !== playerId) {
+        this.sendError(ws, 'not your player');
+        return;
+      }
+      actorId = asPlayerId;
     }
 
     if (!row.started) {
@@ -326,7 +351,7 @@ export class Room extends DurableObject<Env> {
 
     const map = getMap(state.mapId);
     const rng = createRng(row.rng_state);
-    const pa: PlayerAction = { playerId, action };
+    const pa: PlayerAction = { playerId: actorId, action };
 
     let result: ReturnType<typeof reduce>;
     try {
@@ -346,7 +371,7 @@ export class Room extends DurableObject<Env> {
 
     this.writeStateAndRng(result.state, rng.state());
     this.broadcast({ type: 'events', events: result.events, version: result.state.version });
-    this.broadcast({ type: 'state', state: result.state });
+    this.broadcastState(result.state);
   }
 
   private handleStartGame(ws: WebSocket, playerId: string, row: RoomRow): void {
@@ -388,7 +413,89 @@ export class Room extends DurableObject<Env> {
       JSON.stringify(state),
       rng.state(),
     );
-    this.broadcast({ type: 'state', state });
+    this.broadcastState(state);
+  }
+
+  /**
+   * Seats an extra player the requester drives from their own tab — the developer aid
+   * that replaces juggling browser tabs to test a multiplayer game. Host only and lobby
+   * only, so the only rooms this can touch are ones the requester made themselves.
+   *
+   * The dummy is stored as an ordinary player with `dummy_of` set: the engine is never
+   * told, so a dummy pays rent, goes to prison and goes bankrupt like anyone else. It is
+   * seated `connected` because it has no socket of its own to come online — left offline
+   * it would show a removal countdown and then be swept by the lobby alarm.
+   */
+  private handleAddDummy(ws: WebSocket): void {
+    const playerId = this.boundPlayerId(ws);
+    if (!playerId) {
+      this.sendError(ws, 'join first');
+      return;
+    }
+    const row = this.getRoomRow();
+    if (!row) {
+      this.sendError(ws, 'room not found');
+      return;
+    }
+    if (row.host_id !== playerId) {
+      this.sendError(ws, 'only the host can add players');
+      return;
+    }
+    if (row.started) {
+      this.sendError(ws, 'game already started');
+      return;
+    }
+    const players = this.getPlayers();
+    if (players.length >= this.settingsOf(row).maxPlayers) {
+      this.sendError(ws, 'room is full');
+      return;
+    }
+
+    const joinOrder = Math.max(-1, ...players.map((p) => p.join_order)) + 1;
+    const taken = new Set(players.map((p) => p.color));
+    const color = COLOR_PALETTE.find((c) => !taken.has(c)) ?? COLOR_PALETTE[joinOrder % COLOR_PALETTE.length]!;
+    const usedNumbers = new Set(
+      players.map((p) => Number(/^Bot (\d+)$/.exec(p.name)?.[1])).filter((n) => Number.isInteger(n)),
+    );
+    let number = 1;
+    while (usedNumbers.has(number)) number++;
+
+    this.ctx.storage.sql.exec(
+      `INSERT INTO players (id, token, name, color, join_order, connected, disconnected_at, dummy_of)
+       VALUES (?, ?, ?, ?, ?, 1, NULL, ?)`,
+      crypto.randomUUID(),
+      crypto.randomUUID(),
+      `Bot ${number}`,
+      color,
+      joinOrder,
+      playerId,
+    );
+    this.broadcastRoomOrState(this.getRoomRow()!);
+  }
+
+  /** Drops a dummy the requester owns. Real players leave on their own (`handleLeave`). */
+  private handleRemovePlayer(ws: WebSocket, targetId: string): void {
+    const playerId = this.boundPlayerId(ws);
+    if (!playerId) {
+      this.sendError(ws, 'join first');
+      return;
+    }
+    const row = this.getRoomRow();
+    if (!row) {
+      this.sendError(ws, 'room not found');
+      return;
+    }
+    if (row.started) {
+      this.sendError(ws, 'game already started');
+      return;
+    }
+    const target = this.getPlayerById(targetId);
+    if (!target || target.dummy_of !== playerId) {
+      this.sendError(ws, 'not your player');
+      return;
+    }
+    this.removePlayer(targetId);
+    this.broadcastRoomOrState(this.getRoomRow()!);
   }
 
   /**
@@ -420,7 +527,11 @@ export class Room extends DurableObject<Env> {
 
   /** Drops a player's seat and hands the room to the next-longest-seated player if they were host. */
   private removePlayer(playerId: string): void {
-    this.ctx.storage.sql.exec('DELETE FROM players WHERE id = ?', playerId);
+    // Dummies go with their owner. Left behind they would point at a deleted row: nobody
+    // could drive them and nobody could remove them, yet they would still hold a seat and
+    // count against `maxPlayers`. This matters most on the disconnect sweep, which removes
+    // a player nobody asked to remove.
+    this.ctx.storage.sql.exec('DELETE FROM players WHERE id = ? OR dummy_of = ?', playerId, playerId);
     const row = this.getRoomRow();
     if (!row || row.host_id !== playerId) return;
     const heir = this.getPlayers()[0] ?? null;
@@ -493,6 +604,13 @@ export class Room extends DurableObject<Env> {
     return this.ctx.storage.sql
       .exec<PlayerRow>('SELECT * FROM players ORDER BY join_order ASC')
       .toArray();
+  }
+
+  private getPlayerById(id: string): PlayerRow | null {
+    const rows = this.ctx.storage.sql
+      .exec<PlayerRow>('SELECT * FROM players WHERE id = ?', id)
+      .toArray();
+    return rows[0] ?? null;
   }
 
   private getPlayerByToken(token: string): PlayerRow | null {
@@ -579,6 +697,7 @@ export class Room extends DurableObject<Env> {
       skipTurns: 0,
       bankrupt: false,
       connected: !!p.connected,
+      ...(p.dummy_of ? { dummyOf: p.dummy_of } : {}),
       ...(p.connected || p.disconnected_at === null
         ? {}
         : { removeInMs: Math.max(0, p.disconnected_at + grace - Date.now()) }),
@@ -631,7 +750,25 @@ export class Room extends DurableObject<Env> {
       return;
     }
     const state = this.getState(row);
-    if (state) this.broadcast({ type: 'state', state });
+    if (state) this.broadcastState(state);
+  }
+
+  /**
+   * Every state broadcast carries who owns which dummy, because that is the only way a
+   * client learns it once the game has started — a reconnecting host is sent a state
+   * snapshot, never a lobby roster, and without this they would silently lose control of
+   * their own dummies and the game would stall on a dummy's turn.
+   *
+   * Stamped on the way out only: what gets persisted stays exactly what the engine
+   * produced.
+   */
+  private broadcastState(state: GameState): void {
+    const owners = new Map(this.getPlayers().map((p) => [p.id, p.dummy_of]));
+    const players = state.players.map((p) => {
+      const owner = owners.get(p.id);
+      return owner ? { ...p, dummyOf: owner } : p;
+    });
+    this.broadcast({ type: 'state', state: { ...state, players } });
   }
 
   /** Broadcasts via `ctx.getWebSockets()` — never a member array, which vanishes on eviction. */

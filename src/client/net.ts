@@ -3,7 +3,6 @@ import type {
   ClientMessage, ServerMessage, RoomMeta, Player, GameState, GameEvent,
   RoomSettings, GameAction,
 } from '../shared/types';
-import { isTestMode } from './testMode';
 
 /**
  * One WebSocket per room, typed against `ClientMessage`/`ServerMessage`.
@@ -38,19 +37,9 @@ function storageKey(code: string): string {
   return `boardclone:room:${code}`;
 }
 
-/**
- * Normally `localStorage`, so a player keeps their seat across a browser restart.
- * In test mode it's `sessionStorage`, which is per-tab: that's the whole trick behind
- * seating several players from one browser — each tab that opens the room link has no
- * identity of its own yet, so it joins as a new player instead of stealing the last one's.
- */
-function identityStore(): Storage {
-  return isTestMode() ? window.sessionStorage : window.localStorage;
-}
-
 function loadIdentity(code: string): StoredIdentity | null {
   try {
-    const raw = identityStore().getItem(storageKey(code));
+    const raw = window.localStorage.getItem(storageKey(code));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredIdentity>;
     if (typeof parsed.playerId === 'string' && typeof parsed.token === 'string' && typeof parsed.name === 'string') {
@@ -65,7 +54,7 @@ function loadIdentity(code: string): StoredIdentity | null {
 
 function saveIdentity(code: string, identity: StoredIdentity): void {
   try {
-    identityStore().setItem(storageKey(code), JSON.stringify(identity));
+    window.localStorage.setItem(storageKey(code), JSON.stringify(identity));
   } catch {
     // best-effort; without storage the player just re-enters their name next time
   }
@@ -73,7 +62,7 @@ function saveIdentity(code: string, identity: StoredIdentity): void {
 
 function clearIdentity(code: string): void {
   try {
-    identityStore().removeItem(storageKey(code));
+    window.localStorage.removeItem(storageKey(code));
   } catch {
     // nothing stored means nothing to clear
   }
@@ -206,8 +195,11 @@ class RoomConnection {
 export interface RoomConnectionApi extends ConnState {
   join: (name: string) => void;
   leave: () => void;
+  addDummy: () => void;
+  removePlayer: (playerId: string) => void;
   updateSettings: (settings: Partial<RoomSettings>) => void;
-  sendAction: (action: GameAction) => void;
+  /** `asPlayerId` acts for one of your own dummy players; the server refuses any other id. */
+  sendAction: (action: GameAction, asPlayerId?: string) => void;
   startGame: () => void;
 }
 
@@ -230,8 +222,11 @@ export function useRoomConnection(code: string): RoomConnectionApi {
     ...snapshot,
     join: (name: string) => connRef.current?.join(name),
     leave: () => connRef.current?.leave(),
+    addDummy: () => connRef.current?.send({ type: 'add_dummy' }),
+    removePlayer: (playerId: string) => connRef.current?.send({ type: 'remove_player', playerId }),
     updateSettings: (settings: Partial<RoomSettings>) => connRef.current?.send({ type: 'update_settings', settings }),
-    sendAction: (action: GameAction) => connRef.current?.send({ type: 'action', action }),
+    sendAction: (action: GameAction, asPlayerId?: string) =>
+      connRef.current?.send(asPlayerId ? { type: 'action', action, asPlayerId } : { type: 'action', action }),
     startGame: () => connRef.current?.send({ type: 'action', action: { type: 'start_game' } }),
   };
 }

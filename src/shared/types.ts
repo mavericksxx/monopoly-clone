@@ -146,6 +146,13 @@ export interface Player {
    * the roster (so the client counts down from receipt rather than trusting clock skew).
    */
   removeInMs?: number;
+  /**
+   * Set by the server on both the lobby roster and every broadcast state: the id of the
+   * real player who added this seat as a dummy and drives it from their own tab. Absent
+   * on ordinary players. The engine neither sets nor reads it — as far as the rules are
+   * concerned a dummy is a player like any other.
+   */
+  dummyOf?: PlayerId;
 }
 
 export interface Ownership {
@@ -246,8 +253,15 @@ export interface RoomMeta {
 export type ClientMessage =
   | { type: 'join'; name: string; token?: string }
   | { type: 'leave' }
+  /** Developer aid: seats a extra player the requester controls. Host only, lobby only. */
+  | { type: 'add_dummy' }
+  | { type: 'remove_player'; playerId: PlayerId }
   | { type: 'update_settings'; settings: Partial<RoomSettings> }
-  | { type: 'action'; action: GameAction };
+  /**
+   * `asPlayerId` names one of the sender's own dummy players; the server refuses any
+   * other id. Omitted, the action is taken by whoever the socket is bound to.
+   */
+  | { type: 'action'; action: GameAction; asPlayerId?: PlayerId };
 
 export type ServerMessage =
   | { type: 'joined'; playerId: PlayerId; token: string; room: RoomMeta }

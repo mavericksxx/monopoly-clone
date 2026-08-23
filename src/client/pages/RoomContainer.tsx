@@ -33,6 +33,8 @@ export function RoomContainer({ code }: { code: string }) {
       error={conn.error}
       onJoin={conn.join}
       onLeave={() => { conn.leave(); navigate('/'); }}
+      onAddDummy={conn.addDummy}
+      onRemovePlayer={conn.removePlayer}
       onUpdateSettings={conn.updateSettings}
       onStart={conn.startGame}
     />

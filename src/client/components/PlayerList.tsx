@@ -28,7 +28,15 @@ function countdown(ms: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
-export function PlayerList({ players, hostId }: { players: readonly Player[]; hostId: PlayerId | null }) {
+export function PlayerList({
+  players, hostId, myPlayerId, onRemoveDummy,
+}: {
+  players: readonly Player[];
+  hostId: PlayerId | null;
+  myPlayerId?: PlayerId | null;
+  /** Present only in developer mode; offered on bots this player added, never on people. */
+  onRemoveDummy?: (playerId: PlayerId) => void;
+}) {
   const elapsed = useElapsedSince(players);
 
   return (
@@ -40,12 +48,22 @@ export function PlayerList({ players, hostId }: { players: readonly Player[]; ho
             <span className="player-list__dot" style={{ background: p.color }} />
             <span className="player-list__name">{p.name}</span>
             {p.id === hostId && <span className="player-list__host">host</span>}
+            {p.dummyOf && <span className="player-list__bot">bot</span>}
             {!p.connected && (
               <span className="player-list__offline">
                 {p.removeInMs === undefined
                   ? 'offline'
                   : `offline · leaves in ${countdown(p.removeInMs - elapsed)}`}
               </span>
+            )}
+            {onRemoveDummy && p.dummyOf === myPlayerId && (
+              <button
+                className="btn btn--small player-list__remove"
+                onClick={() => onRemoveDummy(p.id)}
+                title={`Remove ${p.name}`}
+              >
+                Remove
+              </button>
             )}
           </li>
         ))}

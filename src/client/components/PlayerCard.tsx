@@ -20,11 +20,16 @@ export function PlayerCard({
         {player.name.slice(0, 1).toUpperCase()}
       </div>
       <div className="player-card__body">
-        <div className="player-card__name">
-          {player.name}{isMe ? ' (you)' : ''}
-          {!player.connected && <span className="player-card__offline"> offline</span>}
+        {/* Name and balance on one row, pushed to opposite ends, so the card reads across
+            the full width of the rail instead of hugging the avatar. */}
+        <div className="player-card__row">
+          <span className="player-card__name">
+            {player.name}{isMe ? ' (you)' : ''}
+            {player.dummyOf && <span className="player-card__bot"> bot</span>}
+            {!player.connected && <span className="player-card__offline"> offline</span>}
+          </span>
+          <span className="player-card__cash">${player.cash}</span>
         </div>
-        <div className="player-card__cash">${player.cash}</div>
         {player.inJail && <div className="player-card__jail">In prison (turn {player.jailTurns}/3)</div>}
         {owned.length > 0 && (
           <div className="player-card__properties">

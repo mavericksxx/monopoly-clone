@@ -2,8 +2,8 @@
  * Pure geometry: maps a board's tile count onto a square CSS Grid ring.
  *
  * A square ring of N tiles has 4 corners and (N - 4) / 4 tiles per side.
- * Tile 0 sits in one corner; indices increase around the ring one side at a
- * time. This is entirely derived from `tileCount` — it must work for 40,
+ * Tile 0 is the top-left corner and indices increase clockwise: right along the
+ * top, down the right side, left along the bottom, up the left side. This is entirely derived from `tileCount` — it must work for 40,
  * 48, or any other multiple-of-4-plus-4 board, so nothing here may hardcode
  * a tile count or a fixed coordinate.
  */
@@ -60,7 +60,7 @@ export function trackSpan(
   return { centre: ((before + size / 2) / total) * 100, size: (size / total) * 100 };
 }
 
-const EDGES: readonly Edge[] = ['bottom', 'left', 'top', 'right'];
+const EDGES: readonly Edge[] = ['top', 'right', 'bottom', 'left'];
 
 export function ringLayout(tileCount: number): RingLayout {
   if (!Number.isInteger(tileCount) || tileCount < 4 || (tileCount - 4) % 4 !== 0) {
@@ -80,21 +80,21 @@ export function ringLayout(tileCount: number): RingLayout {
     let col: number;
     const edge: Edge = EDGES[segment] ?? 'right';
     switch (segment) {
-      case 0: // bottom row, right corner -> left corner
-        row = side;
-        col = side - posInSegment;
-        break;
-      case 1: // left column, bottom corner -> top corner
-        row = side - posInSegment;
-        col = 1;
-        break;
-      case 2: // top row, left corner -> right corner
+      case 0: // top row, left corner -> right corner
         row = 1;
         col = 1 + posInSegment;
         break;
-      default: // right column, top corner -> bottom corner (back to start)
+      case 1: // right column, top corner -> bottom corner
         row = 1 + posInSegment;
         col = side;
+        break;
+      case 2: // bottom row, right corner -> left corner
+        row = side;
+        col = side - posInSegment;
+        break;
+      default: // left column, bottom corner -> top corner (back to start)
+        row = side - posInSegment;
+        col = 1;
         break;
     }
     positions.push({ row, col, edge, isCorner: posInSegment === 0 });
